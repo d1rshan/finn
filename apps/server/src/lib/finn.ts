@@ -15,14 +15,22 @@ import {
 } from "@finn/db";
 
 import { db } from "@finn/db";
+import { z } from "zod";
 import {
   answerMoneyQuestion,
   buildAnalyticsSnapshot,
   buildReportMetadataFromSnapshot,
 } from "@/lib/analytics";
+import { askFinnWithGlm } from "@/lib/glm";
 
 type ExpenseRow = typeof expense.$inferSelect;
 type AnalyticsPeriod = "weekly" | "monthly";
+
+const llmAskResponseSchema = z.object({
+  answer: z.string().trim().min(1),
+  suggestions: z.array(z.string().trim().min(1)).min(1).max(3),
+  supportingSignalTitles: z.array(z.string().trim().min(1)).max(5).default([]),
+});
 
 const INR_FORMATTER = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -609,6 +617,30 @@ export async function askMoneyQuestion(userId: string, question: string) {
     ),
     now,
   });
+
+  try {
+    const llmContent = await askFinnWithGlm({
+      question,
+      currentExpenses,
+      previousExpenses,
+      snapshot,
+    });
+
+    if (llmContent) {
+      const parsed = llmAskResponseSchema.parse(JSON.parse(llmContent));
+      const supportingSignals = snapshot.behavioralSignals.filter((entry) =>
+        parsed.supportingSignalTitles.includes(entry.title),
+      );
+
+      return {
+        answer: parsed.answer,
+        suggestions: parsed.suggestions,
+        supportingSignals,
+      };
+    }
+  } catch (error) {
+    console.error("GLM Ask Finn fallback", error);
+  }
 
   return answerMoneyQuestion({
     question,

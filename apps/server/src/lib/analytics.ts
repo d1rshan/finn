@@ -14,7 +14,7 @@ import {
   type SpendProjection,
 } from "@finn/db";
 
-type ExpenseLike = {
+export type ExpenseLike = {
   id: string;
   amountMinor: number;
   merchantName: string;
@@ -27,7 +27,7 @@ type ExpenseLike = {
   userId: string;
 };
 
-type AnalyticsSnapshot = {
+export type AnalyticsSnapshot = {
   metrics: ReportMetric[];
   topCategories: ReportTopCategory[];
   topMerchants: ReportTopMerchant[];
