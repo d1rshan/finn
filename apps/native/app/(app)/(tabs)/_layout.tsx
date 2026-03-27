@@ -17,9 +17,11 @@ function FinnTabButton({ accessibilityState, children, onPress, label }: FinnTab
 
   return (
     <Pressable onPress={onPress} style={styles.button}>
-      <View style={[styles.buttonInner, isSelected ? styles.buttonInnerActive : null]}>
+      <View style={[styles.segment, isSelected ? styles.segmentActive : null]}>
         <View style={styles.iconWrap}>{children}</View>
-        {isSelected ? <Text style={styles.buttonLabel}>{label}</Text> : null}
+        <Text style={[styles.segmentLabel, isSelected ? styles.segmentLabelActive : null]}>
+          {label}
+        </Text>
       </View>
     </Pressable>
   );
@@ -35,7 +37,7 @@ export default function TabsLayout() {
         tabBarStyle: styles.tabBar,
         tabBarItemStyle: styles.tabBarItem,
         tabBarActiveTintColor: "#050505",
-        tabBarInactiveTintColor: "#9b9b9b",
+        tabBarInactiveTintColor: "#8b8b8b",
       }}
     >
       <Tabs.Screen
@@ -79,18 +81,19 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 18,
-    height: 74,
-    borderRadius: 28,
-    borderTopWidth: 0,
+    left: 20,
+    right: 20,
+    bottom: 22,
+    height: 64,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#1a1a1a",
-    backgroundColor: "rgba(10, 10, 10, 0.96)",
-    paddingHorizontal: 10,
-    paddingTop: 10,
-    paddingBottom: 10,
+    borderColor: "#171717",
+    backgroundColor: "#0d0d0d",
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    borderTopWidth: 1,
+    elevation: 0,
+    shadowOpacity: 0,
   },
   tabBarItem: {
     height: 54,
@@ -99,25 +102,28 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
   },
-  buttonInner: {
-    minHeight: 54,
-    borderRadius: 22,
+  segment: {
+    minHeight: 48,
+    borderRadius: 999,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     paddingHorizontal: 12,
   },
-  buttonInnerActive: {
+  segmentActive: {
     backgroundColor: "#f4f4f4",
   },
   iconWrap: {
     alignItems: "center",
     justifyContent: "center",
   },
-  buttonLabel: {
+  segmentLabel: {
+    color: "#8b8b8b",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  segmentLabelActive: {
     color: "#050505",
-    fontSize: 13,
-    fontWeight: "700",
   },
 });
