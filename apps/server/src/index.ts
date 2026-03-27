@@ -17,8 +17,10 @@ import {
   listExpenses,
   listExpensesForRange,
   listReports,
+  streamAskMoneyQuestion,
 } from "@/lib/finn";
 import { requireSession } from "@/lib/auth";
+import { stream } from "hono/streaming";
 
 const app = new Hono();
 const api = new Hono();
@@ -151,6 +153,36 @@ api.post("/ask", async (c) => {
   const answer = await askMoneyQuestion(session.user.id, payload.question, payload.history);
 
   return c.json(answer);
+});
+
+api.post("/ask/stream", async (c) => {
+  const session = await requireSession(c);
+  const payload = askMoneySchema.parse(await c.req.json());
+
+  console.log(`[AskStream] Question from ${session.user.id}: ${payload.question}`);
+
+  try {
+    const fullResponse = await askMoneyQuestion(session.user.id, payload.question, payload.history);
+    console.log(`[AskStream] Got response, starting stream...`);
+
+    c.header("Content-Type", "text/plain; charset=utf-8");
+    c.header("Transfer-Encoding", "chunked");
+
+    return stream(c, async (stream) => {
+      const words = fullResponse.answer.split(" ");
+      for (const word of words) {
+        await stream.write(word + " ");
+        await stream.sleep(10); // Reduced from 20ms to 10ms for better "speed"
+      }
+
+      await stream.write("\n__FINN_DATA__" + JSON.stringify(fullResponse));
+      console.log(`[AskStream] Stream complete.`);
+    });
+
+  } catch (err) {
+    console.error(`[AskStream] Error:`, err);
+    throw new HTTPException(500, { message: "Finn failed to process your request." });
+  }
 });
 
 app.route("/api", api);
