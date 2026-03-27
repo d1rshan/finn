@@ -1,36 +1,22 @@
 import { Link, Stack } from "expo-router";
-import { Text, View, StyleSheet } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { Container } from "@/components/container";
-import { NAV_THEME } from "@/lib/constants";
-import { useColorScheme } from "@/lib/use-color-scheme";
 
 export default function NotFoundScreen() {
-  const { colorScheme } = useColorScheme();
-  const theme = colorScheme === "dark" ? NAV_THEME.dark : NAV_THEME.light;
-
   return (
     <>
-      <Stack.Screen options={{ title: "Oops!" }} />
+      <Stack.Screen options={{ title: "Not Found" }} />
       <Container>
         <View style={styles.container}>
-          <View style={styles.content}>
-            <Text style={styles.emoji}>🤔</Text>
-            <Text style={[styles.title, { color: theme.text }]}>Page Not Found</Text>
-            <Text style={[styles.subtitle, { color: theme.text, opacity: 0.7 }]}>
-              Sorry, the page you're looking for doesn't exist.
-            </Text>
-            <Link href="/" asChild>
-              <Text
-                style={[
-                  styles.link,
-                  { color: theme.primary, backgroundColor: `${theme.primary}1a` },
-                ]}
-              >
-                Go to Home
-              </Text>
-            </Link>
-          </View>
+          <Text style={styles.eyebrow}>404</Text>
+          <Text style={styles.title}>This route does not exist.</Text>
+          <Text style={styles.subtitle}>
+            Finn only keeps the surfaces that matter close at hand.
+          </Text>
+          <Link href="/" style={styles.link}>
+            Back to Finn
+          </Link>
         </View>
       </Container>
     </>
@@ -40,29 +26,37 @@ export default function NotFoundScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
-    padding: 16,
+    padding: 24,
+    gap: 12,
   },
-  content: {
-    alignItems: "center",
-  },
-  emoji: {
-    fontSize: 48,
-    marginBottom: 16,
+  eyebrow: {
+    color: "#8b8b8b",
+    fontSize: 12,
+    letterSpacing: 2.4,
+    textTransform: "uppercase",
   },
   title: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 8,
+    color: "#f7f7f7",
+    fontSize: 28,
+    fontWeight: "600",
     textAlign: "center",
   },
   subtitle: {
-    fontSize: 14,
+    color: "#8b8b8b",
+    fontSize: 15,
+    lineHeight: 22,
     textAlign: "center",
-    marginBottom: 24,
+    maxWidth: 300,
   },
   link: {
-    padding: 12,
+    marginTop: 8,
+    color: "#050505",
+    backgroundColor: "#f4f4f4",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 999,
+    overflow: "hidden",
   },
 });

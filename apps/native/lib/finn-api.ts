@@ -1,0 +1,126 @@
+import { useQuery } from "@tanstack/react-query";
+
+import { authClient } from "@/lib/auth-client";
+import {
+  expenseCategories,
+  type ExpenseCategory,
+  type ReportMetadata,
+  type ReportPeriodType,
+} from "@/lib/finn-types";
+import { env } from "@finn/env/native";
+
+type ExpenseDto = {
+  id: string;
+  amountMinor: number;
+  currency: string;
+  merchantName: string;
+  category: ExpenseCategory;
+  occurredAt: string;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export { expenseCategories };
+
+type InsightDto = {
+  id: string;
+  type: string;
+  severity: string;
+  status: string;
+  title: string;
+  body: string;
+  createdAt: string;
+};
+
+type ReportPromptDto = {
+  id: string;
+  periodType: ReportPeriodType;
+  title: string;
+  summary: string;
+  createdAt: string;
+};
+
+type ReportDto = {
+  id: string;
+  title: string;
+  summary: string;
+  periodType: ReportPeriodType;
+  periodStart: string;
+  periodEnd: string;
+  metadata: ReportMetadata;
+  createdAt: string;
+};
+
+async function apiRequest<T>(path: string, init?: RequestInit) {
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+
+  const cookie = authClient.getCookie();
+  if (cookie) {
+    headers.set("cookie", cookie);
+  }
+
+  const response = await fetch(`${env.EXPO_PUBLIC_SERVER_URL}/api${path}`, {
+    ...init,
+    headers,
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? "Request failed");
+  }
+
+  return (await response.json()) as T;
+}
+
+export async function createExpense(input: {
+  amountMinor: number;
+  merchantName: string;
+  category: ExpenseCategory;
+  occurredAt: string;
+  note?: string;
+}) {
+  return apiRequest<{ expense: ExpenseDto }>("/expenses", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function useFeedQuery() {
+  return useQuery({
+    queryKey: ["feed"],
+    queryFn: () =>
+      apiRequest<{
+        insights: InsightDto[];
+        recentExpenses: ExpenseDto[];
+        reportPrompts: ReportPromptDto[];
+      }>("/feed"),
+  });
+}
+
+export function useExpensesQuery() {
+  return useQuery({
+    queryKey: ["expenses"],
+    queryFn: () => apiRequest<{ expenses: ExpenseDto[] }>("/expenses"),
+  });
+}
+
+export function useReportsQuery() {
+  return useQuery({
+    queryKey: ["reports"],
+    queryFn: () => apiRequest<{ reports: ReportDto[] }>("/reports"),
+  });
+}
+
+export function useReportDetailQuery(reportId?: string) {
+  return useQuery({
+    queryKey: ["report", reportId],
+    enabled: Boolean(reportId),
+    queryFn: () =>
+      apiRequest<{
+        report: ReportDto;
+        expenses: ExpenseDto[];
+      }>(`/reports/${reportId}`),
+  });
+}
