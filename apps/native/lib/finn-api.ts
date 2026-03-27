@@ -149,10 +149,29 @@ export function useReportDetailQuery(reportId?: string) {
 export async function askFinn(question: string) {
   return apiRequest<{
     answer: string;
+    bullets: string[];
     suggestions: string[];
     supportingSignals: InsightSummary[];
   }>("/ask", {
     method: "POST",
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, history: [] }),
+  });
+}
+
+export async function chatWithFinn(input: {
+  question: string;
+  history: Array<{
+    role: "user" | "assistant";
+    content: string;
+  }>;
+}) {
+  return apiRequest<{
+    answer: string;
+    bullets: string[];
+    suggestions: string[];
+    supportingSignals: InsightSummary[];
+  }>("/ask", {
+    method: "POST",
+    body: JSON.stringify(input),
   });
 }

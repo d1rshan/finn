@@ -45,6 +45,15 @@ const createExpenseSchema = z.object({
 
 const askMoneySchema = z.object({
   question: z.string().trim().min(4).max(240),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().trim().min(1).max(600),
+      }),
+    )
+    .max(16)
+    .default([]),
 });
 
 api.get("/feed", async (c) => {
@@ -128,7 +137,7 @@ api.get("/reports/:reportId", async (c) => {
 api.post("/ask", async (c) => {
   const session = await requireSession(c);
   const payload = askMoneySchema.parse(await c.req.json());
-  const answer = await askMoneyQuestion(session.user.id, payload.question);
+  const answer = await askMoneyQuestion(session.user.id, payload.question, payload.history);
 
   return c.json(answer);
 });
