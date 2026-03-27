@@ -8,6 +8,7 @@ import { logger } from "hono/logger";
 import { z } from "zod";
 
 import {
+  askMoneyQuestion,
   createExpenseForUser,
   deleteExpenseForUser,
   getExpenseFeed,
@@ -40,6 +41,10 @@ const createExpenseSchema = z.object({
   category: z.enum(expenseCategories),
   occurredAt: z.coerce.date(),
   note: z.string().trim().max(140).optional(),
+});
+
+const askMoneySchema = z.object({
+  question: z.string().trim().min(4).max(240),
 });
 
 api.get("/feed", async (c) => {
@@ -118,6 +123,14 @@ api.get("/reports/:reportId", async (c) => {
     report: selectedReport,
     expenses: expensesForReport,
   });
+});
+
+api.post("/ask", async (c) => {
+  const session = await requireSession(c);
+  const payload = askMoneySchema.parse(await c.req.json());
+  const answer = await askMoneyQuestion(session.user.id, payload.question);
+
+  return c.json(answer);
 });
 
 app.route("/api", api);

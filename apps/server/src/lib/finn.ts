@@ -1,12 +1,9 @@
 import {
   expense,
-  expenseCategories,
   insight,
   report,
   type ExpenseCategory,
   type InsightMetadata,
-  type ReportMetadata,
-  type ReportPeriodType,
   and,
   asc,
   desc,
@@ -16,6 +13,11 @@ import {
 } from "@finn/db";
 
 import { db } from "@finn/db";
+import {
+  answerMoneyQuestion,
+  buildAnalyticsSnapshot,
+  buildReportMetadataFromSnapshot,
+} from "@/lib/analytics";
 
 type ExpenseRow = typeof expense.$inferSelect;
 
@@ -70,14 +72,23 @@ function sumExpenses(expensesToSum: ExpenseRow[]) {
   return expensesToSum.reduce((total, item) => total + item.amountMinor, 0);
 }
 
-function titleCase(value: string) {
-  return value
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+function previousPeriodStart(date: Date, periodType: "weekly" | "monthly") {
+  return periodType === "weekly"
+    ? subtractDays(date, 7)
+    : new Date(date.getFullYear(), date.getMonth() - 1, 1);
 }
 
-function buildReportSummary(periodType: ReportPeriodType, expensesForPeriod: ExpenseRow[]) {
+function previousPeriodEnd(date: Date, periodType: "weekly" | "monthly") {
+  return periodType === "weekly"
+    ? date
+    : new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function buildReportSummary(
+  periodType: "weekly" | "monthly",
+  expensesForPeriod: ExpenseRow[],
+  personaLabel?: string | null,
+) {
   if (expensesForPeriod.length === 0) {
     return periodType === "weekly"
       ? "No spend logged this week yet. Finn will start spotting patterns once activity comes in."
@@ -89,70 +100,11 @@ function buildReportSummary(periodType: ReportPeriodType, expensesForPeriod: Exp
     .sort((a, b) => b.amountMinor - a.amountMinor)[0]
     ?.merchantName;
 
+  const personaCopy = personaLabel ? ` You are currently reading as ${personaLabel}.` : "";
+
   return periodType === "weekly"
-    ? `You logged ${formatInr(total)} this week across ${expensesForPeriod.length} payments. ${topMerchant ? `${topMerchant} was the biggest single merchant.` : "Finn is tracking where the money is moving."}`
-    : `You logged ${formatInr(total)} this month across ${expensesForPeriod.length} payments. ${topMerchant ? `${topMerchant} stood out most in this cycle.` : "Finn is building a clearer picture of your monthly pattern."}`;
-}
-
-function buildReportMetadata(
-  expensesForPeriod: ExpenseRow[],
-  previousPeriodExpenses: ExpenseRow[],
-): ReportMetadata {
-  const total = sumExpenses(expensesForPeriod);
-  const previousTotal = sumExpenses(previousPeriodExpenses);
-  const categoryMap = new Map<ExpenseCategory, number>();
-  const merchantMap = new Map<string, { amountMinor: number; count: number }>();
-
-  for (const category of expenseCategories) {
-    categoryMap.set(category, 0);
-  }
-
-  for (const item of expensesForPeriod) {
-    categoryMap.set(item.category, (categoryMap.get(item.category) ?? 0) + item.amountMinor);
-    const existing = merchantMap.get(item.merchantName) ?? { amountMinor: 0, count: 0 };
-    merchantMap.set(item.merchantName, {
-      amountMinor: existing.amountMinor + item.amountMinor,
-      count: existing.count + 1,
-    });
-  }
-
-  const change =
-    previousTotal > 0 ? Number((((total - previousTotal) / previousTotal) * 100).toFixed(1)) : null;
-
-  const metrics = [
-    { label: "Total spend", value: total, change },
-    { label: "Transactions", value: expensesForPeriod.length },
-    {
-      label: "Average payment",
-      value: expensesForPeriod.length > 0 ? Math.round(total / expensesForPeriod.length) : 0,
-    },
-  ];
-
-  const topCategories = [...categoryMap.entries()]
-    .filter(([, amountMinor]) => amountMinor > 0)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([category, amountMinor]) => ({
-      category,
-      amountMinor,
-      percentage: total > 0 ? Number(((amountMinor / total) * 100).toFixed(1)) : 0,
-    }));
-
-  const topMerchants = [...merchantMap.entries()]
-    .sort((a, b) => b[1].amountMinor - a[1].amountMinor)
-    .slice(0, 3)
-    .map(([merchantName, values]) => ({
-      merchantName,
-      amountMinor: values.amountMinor,
-      count: values.count,
-    }));
-
-  return {
-    metrics,
-    topCategories,
-    topMerchants,
-    transactionCount: expensesForPeriod.length,
-  };
+    ? `You logged ${formatInr(total)} this week across ${expensesForPeriod.length} payments. ${topMerchant ? `${topMerchant} was the biggest single merchant.` : "Finn is tracking where the money is moving."}${personaCopy}`
+    : `You logged ${formatInr(total)} this month across ${expensesForPeriod.length} payments. ${topMerchant ? `${topMerchant} stood out most in this cycle.` : "Finn is building a clearer picture of your monthly pattern."}${personaCopy}`;
 }
 
 function createInsightRecord(args: {
@@ -183,113 +135,81 @@ function buildInsights(userId: string, expensesForUser: ExpenseRow[]) {
   }
 
   const insightsToInsert: Array<typeof insight.$inferInsert> = [];
-  const sortedExpenses = [...expensesForUser].sort(
-    (a, b) => b.occurredAt.getTime() - a.occurredAt.getTime(),
-  );
-  const lastSevenDaysStart = startOfDay(subtractDays(new Date(), 6));
-  const previousSevenDaysStart = startOfDay(subtractDays(new Date(), 13));
-  const currentWindow = sortedExpenses.filter((item) => item.occurredAt >= lastSevenDaysStart);
+  const sortedExpenses = [...expensesForUser].sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
+  const now = new Date();
+  const currentWindowStart = startOfDay(subtractDays(now, 89));
+  const previousWindowStart = startOfDay(subtractDays(now, 179));
+  const currentWindow = sortedExpenses.filter((item) => item.occurredAt >= currentWindowStart);
   const previousWindow = sortedExpenses.filter(
-    (item) => item.occurredAt >= previousSevenDaysStart && item.occurredAt < lastSevenDaysStart,
+    (item) => item.occurredAt >= previousWindowStart && item.occurredAt < currentWindowStart,
   );
+  const snapshot = buildAnalyticsSnapshot({
+    expenses: currentWindow,
+    previousExpenses: previousWindow,
+    now,
+  });
 
-  const currentTotal = sumExpenses(currentWindow);
-  const previousTotal = sumExpenses(previousWindow);
+  for (const signal of snapshot.behavioralSignals) {
+    const type =
+      signal.key === "weekly-spike"
+        ? "spike"
+        : signal.key === "recurring"
+          ? "recurring"
+          : signal.key === "projection"
+            ? "projection"
+            : signal.key === "silence"
+              ? "silence"
+              : signal.key === "guilt-index"
+                ? "guilt-index"
+                : signal.key === "category-concentration"
+                  ? "category-trend"
+                  : signal.key === "month-end-crunch"
+                    ? "streak"
+                    : signal.key === "persona"
+                      ? "behavior-pattern"
+                      : "behavior-pattern";
 
-  if (currentTotal > previousTotal * 1.35 && currentTotal - previousTotal >= 100000) {
-    const delta = previousTotal === 0 ? null : Number((((currentTotal - previousTotal) / previousTotal) * 100).toFixed(1));
+    const metadata: InsightMetadata = {
+      summary: signal.summary,
+      personaLabel: snapshot.persona?.label,
+    };
+
+    const projection = snapshot.projections[0];
+    if (type === "projection" && projection) {
+      metadata.category = projection.category;
+      metadata.projectedAmountMinor = projection.projectedAmountMinor;
+      metadata.baselineAmountMinor = projection.baselineAmountMinor;
+    }
+
+    const recurringCharge = snapshot.recurringCharges[0];
+    if (type === "recurring" && recurringCharge) {
+      metadata.merchantName = recurringCharge.merchantName;
+      metadata.amountMinor = recurringCharge.amountMinor;
+      metadata.cadenceDays = recurringCharge.cadenceDays;
+      metadata.category = recurringCharge.category;
+    }
+
+    const silence = snapshot.unusualSilence[0];
+    if (type === "silence" && silence) {
+      metadata.category = silence.category;
+      metadata.expectedGapDays = silence.expectedGapDays;
+      metadata.actualGapDays = silence.actualGapDays;
+    }
+
     insightsToInsert.push(
       createInsightRecord({
         userId,
-        type: "spike",
-        severity: "high",
-        title: "Spending picked up sharply this week",
-        body: `You are at ${formatInr(currentTotal)} in the last 7 days${delta ? `, up ${delta}% from the previous 7-day window.` : "."}`,
-        metadata: {
-          amountMinor: currentTotal,
-          percentageChange: delta ?? undefined,
-          windowStart: lastSevenDaysStart.toISOString(),
-          windowEnd: new Date().toISOString(),
-        },
-      }),
-    );
-  }
-
-  const merchantGroups = new Map<string, ExpenseRow[]>();
-  for (const item of sortedExpenses) {
-    const entries = merchantGroups.get(item.merchantName) ?? [];
-    entries.push(item);
-    merchantGroups.set(item.merchantName, entries);
-  }
-
-  const recurringMerchant = [...merchantGroups.entries()]
-    .map(([merchantName, entries]) => ({ merchantName, entries }))
-    .find(({ entries }) => entries.length >= 3);
-
-  if (recurringMerchant) {
-    insightsToInsert.push(
-      createInsightRecord({
-        userId,
-        type: "recurring",
-        severity: "medium",
-        title: `${recurringMerchant.merchantName} is becoming a pattern`,
-        body: `You have paid ${recurringMerchant.merchantName} ${recurringMerchant.entries.length} times. Finn is treating it as a recurring merchant.`,
-        metadata: {
-          merchantName: recurringMerchant.merchantName,
-          count: recurringMerchant.entries.length,
-        },
-        createdAt: recurringMerchant.entries[0]?.occurredAt,
-      }),
-    );
-  }
-
-  let topCategoryInsight: {
-    category: ExpenseCategory;
-    currentAmount: number;
-    percentageChange: number;
-  } | null = null;
-
-  for (const category of expenseCategories) {
-    const currentAmount = sumExpenses(currentWindow.filter((item) => item.category === category));
-    const previousAmount = sumExpenses(previousWindow.filter((item) => item.category === category));
-
-    if (currentAmount < 50000 || previousAmount <= 0) {
-      continue;
-    }
-
-    const percentageChange = Number(
-      (((currentAmount - previousAmount) / previousAmount) * 100).toFixed(1),
-    );
-
-    if (percentageChange < 30) {
-      continue;
-    }
-
-    if (!topCategoryInsight || percentageChange > topCategoryInsight.percentageChange) {
-      topCategoryInsight = { category, currentAmount, percentageChange };
-    }
-  }
-
-  if (topCategoryInsight) {
-    insightsToInsert.push(
-      createInsightRecord({
-        userId,
-        type: "category-trend",
-        severity: "medium",
-        title: `${titleCase(topCategoryInsight.category)} spend is trending higher`,
-        body: `${titleCase(topCategoryInsight.category)} is up ${topCategoryInsight.percentageChange}% this week at ${formatInr(topCategoryInsight.currentAmount)}.`,
-        metadata: {
-          category: topCategoryInsight.category,
-          amountMinor: topCategoryInsight.currentAmount,
-          percentageChange: topCategoryInsight.percentageChange,
-        },
+        type,
+        severity: signal.severity,
+        title: signal.title,
+        body: signal.summary,
+        metadata,
       }),
     );
   }
 
   const averageAmount = Math.round(sumExpenses(sortedExpenses) / sortedExpenses.length);
   const largeExpense = sortedExpenses.find((item) => item.amountMinor >= averageAmount * 2.5);
-
   if (largeExpense) {
     insightsToInsert.push(
       createInsightRecord({
@@ -354,7 +274,7 @@ async function rebuildReports(userId: string, expensesForUser: ExpenseRow[]) {
   const periods = new Map<
     string,
     {
-      periodType: ReportPeriodType;
+      periodType: "weekly" | "monthly";
       periodStart: Date;
       periodEnd: Date;
       expensesForPeriod: ExpenseRow[];
@@ -388,18 +308,16 @@ async function rebuildReports(userId: string, expensesForUser: ExpenseRow[]) {
   const reportsToInsert: Array<typeof report.$inferInsert> = [];
 
   for (const period of periods.values()) {
-    const previousPeriodStart =
-      period.periodType === "weekly"
-        ? subtractDays(period.periodStart, 7)
-        : new Date(period.periodStart.getFullYear(), period.periodStart.getMonth() - 1, 1);
-    const previousPeriodEnd =
-      period.periodType === "weekly"
-        ? period.periodStart
-        : new Date(period.periodStart.getFullYear(), period.periodStart.getMonth(), 1);
-
-    const previousPeriodExpenses = expensesForUser.filter(
-      (item) => item.occurredAt >= previousPeriodStart && item.occurredAt < previousPeriodEnd,
+    const comparisonStart = previousPeriodStart(period.periodStart, period.periodType);
+    const comparisonEnd = previousPeriodEnd(period.periodStart, period.periodType);
+    const previousExpenses = expensesForUser.filter(
+      (item) => item.occurredAt >= comparisonStart && item.occurredAt < comparisonEnd,
     );
+    const snapshot = buildAnalyticsSnapshot({
+      expenses: period.expensesForPeriod,
+      previousExpenses,
+      now: period.periodEnd,
+    });
 
     reportsToInsert.push({
       id: crypto.randomUUID(),
@@ -411,8 +329,12 @@ async function rebuildReports(userId: string, expensesForUser: ExpenseRow[]) {
         period.periodType === "weekly"
           ? `Week of ${period.periodStart.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
           : period.periodStart.toLocaleDateString("en-IN", { month: "long", year: "numeric" }),
-      summary: buildReportSummary(period.periodType, period.expensesForPeriod),
-      metadata: buildReportMetadata(period.expensesForPeriod, previousPeriodExpenses),
+      summary: buildReportSummary(
+        period.periodType,
+        period.expensesForPeriod,
+        snapshot.persona?.label ?? null,
+      ),
+      metadata: buildReportMetadataFromSnapshot(snapshot),
       createdAt: period.periodEnd,
     });
   }
@@ -445,7 +367,7 @@ export async function syncAnalyticsForUser(userId: string) {
 export async function getExpenseFeed(userId: string) {
   await syncAnalyticsForUser(userId);
 
-  const [insightsForUser, recentExpenses, reportsForUser] = await Promise.all([
+  const [insightsForUser, recentExpenses, reportsForUser, expensesForUser] = await Promise.all([
     db.select().from(insight).where(eq(insight.userId, userId)).orderBy(desc(insight.createdAt)).limit(8),
     db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)).limit(8),
     db
@@ -454,7 +376,20 @@ export async function getExpenseFeed(userId: string) {
       .where(eq(report.userId, userId))
       .orderBy(desc(report.periodStart))
       .limit(4),
+    db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)).limit(90),
   ]);
+
+  const now = new Date();
+  const currentWindowStart = startOfDay(subtractDays(now, 89));
+  const previousWindowStart = startOfDay(subtractDays(now, 179));
+  const previousWindowEnd = currentWindowStart;
+  const feedSnapshot = buildAnalyticsSnapshot({
+    expenses: expensesForUser.filter((item) => item.occurredAt >= currentWindowStart),
+    previousExpenses: expensesForUser.filter(
+      (item) => item.occurredAt >= previousWindowStart && item.occurredAt < previousWindowEnd,
+    ),
+    now,
+  });
 
   const reportPrompts = reportsForUser.map((entry) => ({
     id: entry.id,
@@ -468,6 +403,12 @@ export async function getExpenseFeed(userId: string) {
     insights: insightsForUser,
     recentExpenses,
     reportPrompts,
+    snapshot: feedSnapshot,
+    suggestedQuestions: [
+      "Why did I spend more last week?",
+      "What is my biggest financial blind spot?",
+      "Do I have any recurring charges?",
+    ],
   };
 }
 
@@ -557,4 +498,39 @@ export async function listExpensesForRange(args: {
       ),
     )
     .orderBy(desc(expense.occurredAt));
+}
+
+export async function askMoneyQuestion(userId: string, question: string) {
+  const expensesForUser = await db
+    .select()
+    .from(expense)
+    .where(eq(expense.userId, userId))
+    .orderBy(desc(expense.occurredAt));
+
+  const now = new Date();
+  const currentWindowStart = startOfDay(subtractDays(now, 6));
+  const previousWindowStart = startOfDay(subtractDays(now, 13));
+  const snapshotWindowStart = startOfDay(subtractDays(now, 89));
+  const previousSnapshotWindowStart = startOfDay(subtractDays(now, 179));
+
+  const currentExpenses = expensesForUser.filter((item) => item.occurredAt >= currentWindowStart);
+  const previousExpenses = expensesForUser.filter(
+    (item) => item.occurredAt >= previousWindowStart && item.occurredAt < currentWindowStart,
+  );
+
+  const snapshot = buildAnalyticsSnapshot({
+    expenses: expensesForUser.filter((item) => item.occurredAt >= snapshotWindowStart),
+    previousExpenses: expensesForUser.filter(
+      (item) =>
+        item.occurredAt >= previousSnapshotWindowStart && item.occurredAt < snapshotWindowStart,
+    ),
+    now,
+  });
+
+  return answerMoneyQuestion({
+    question,
+    currentExpenses,
+    previousExpenses,
+    snapshot,
+  });
 }

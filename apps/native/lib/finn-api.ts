@@ -3,7 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { authClient } from "@/lib/auth-client";
 import {
   expenseCategories,
+  type BehavioralPersona,
   type ExpenseCategory,
+  type InsightSeverity,
+  type InsightSummary,
   type ReportMetadata,
   type ReportPeriodType,
 } from "@/lib/finn-types";
@@ -26,7 +29,7 @@ export { expenseCategories };
 type InsightDto = {
   id: string;
   type: string;
-  severity: string;
+  severity: InsightSeverity;
   status: string;
   title: string;
   body: string;
@@ -50,6 +53,22 @@ type ReportDto = {
   periodEnd: string;
   metadata: ReportMetadata;
   createdAt: string;
+};
+
+type SnapshotDto = {
+  metrics: ReportMetadata["metrics"];
+  topCategories: ReportMetadata["topCategories"];
+  topMerchants: ReportMetadata["topMerchants"];
+  transactionCount: number;
+  persona: BehavioralPersona | null;
+  behavioralSignals: InsightSummary[];
+  dayOfWeekSpend: ReportMetadata["dayOfWeekSpend"];
+  projections: ReportMetadata["projections"];
+  recurringCharges: ReportMetadata["recurringCharges"];
+  unusualSilence: ReportMetadata["unusualSilence"];
+  emotionalSpendingFingerprint?: string;
+  endOfMonthCrunch?: string;
+  guiltIndex?: ReportMetadata["guiltIndex"];
 };
 
 async function apiRequest<T>(path: string, init?: RequestInit) {
@@ -95,6 +114,8 @@ export function useFeedQuery() {
         insights: InsightDto[];
         recentExpenses: ExpenseDto[];
         reportPrompts: ReportPromptDto[];
+        snapshot: SnapshotDto;
+        suggestedQuestions: string[];
       }>("/feed"),
   });
 }
@@ -122,5 +143,16 @@ export function useReportDetailQuery(reportId?: string) {
         report: ReportDto;
         expenses: ExpenseDto[];
       }>(`/reports/${reportId}`),
+  });
+}
+
+export async function askFinn(question: string) {
+  return apiRequest<{
+    answer: string;
+    suggestions: string[];
+    supportingSignals: InsightSummary[];
+  }>("/ask", {
+    method: "POST",
+    body: JSON.stringify({ question }),
   });
 }
