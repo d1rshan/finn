@@ -28,6 +28,7 @@ type AnalyticsPeriod = "weekly" | "monthly";
 
 const llmAskResponseSchema = z.object({
   answer: z.string().trim().min(1),
+  bullets: z.array(z.string().trim().min(1)).min(1).max(3),
   suggestions: z.array(z.string().trim().min(1)).min(1).max(3),
   supportingSignalTitles: z.array(z.string().trim().min(1)).max(5).default([]),
 });
@@ -591,7 +592,11 @@ function buildAnalyticsSummary(expensesForPeriod: ExpenseRow[]) {
   };
 }
 
-export async function askMoneyQuestion(userId: string, question: string) {
+export async function askMoneyQuestion(
+  userId: string,
+  question: string,
+  history: Array<{ role: "user" | "assistant"; content: string }> = [],
+) {
   const expensesForUser = await db
     .select()
     .from(expense)
@@ -624,6 +629,7 @@ export async function askMoneyQuestion(userId: string, question: string) {
       currentExpenses,
       previousExpenses,
       snapshot,
+      history,
     });
 
     if (llmContent) {
@@ -634,6 +640,7 @@ export async function askMoneyQuestion(userId: string, question: string) {
 
       return {
         answer: parsed.answer,
+        bullets: parsed.bullets,
         suggestions: parsed.suggestions,
         supportingSignals,
       };
@@ -642,12 +649,17 @@ export async function askMoneyQuestion(userId: string, question: string) {
     console.error("GLM Ask Finn fallback", error);
   }
 
-  return answerMoneyQuestion({
+  const fallback = answerMoneyQuestion({
     question,
     currentExpenses,
     previousExpenses,
     snapshot,
   });
+
+  return {
+    ...fallback,
+    bullets: fallback.supportingSignals.slice(0, 3).map((entry) => entry.summary),
+  };
 }
 
 export async function getAnalytics(userId: string, period: AnalyticsPeriod) {

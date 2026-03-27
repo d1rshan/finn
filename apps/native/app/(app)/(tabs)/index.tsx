@@ -1,40 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Link, type Href } from "expo-router";
-import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
-import {
-
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Container } from "@/components/container";
 import { authClient } from "@/lib/auth-client";
 import { formatCategory, formatCurrency, formatDateTime } from "@/lib/format";
-import { askFinn, useFeedQuery } from "@/lib/finn-api";
+import { useFeedQuery } from "@/lib/finn-api";
 
 export default function HomeScreen() {
   const feedQuery = useFeedQuery();
   const session = authClient.useSession();
-  const [question, setQuestion] = useState("");
-  const [askError, setAskError] = useState<string | null>(null);
-  const askMutation = useMutation({
-    mutationFn: askFinn,
-    onError(error) {
-      setAskError(error instanceof Error ? error.message : "Finn could not answer right now.");
-    },
-    onSuccess() {
-      setAskError(null);
-    },
-  });
-
   const snapshot = feedQuery.data?.snapshot;
   const [isAccountSheetOpen, setIsAccountSheetOpen] = useState(false);
 
@@ -86,56 +62,6 @@ export default function HomeScreen() {
             ) : null}
           </View>
         ) : null}
-
-        <View style={styles.askCard}>
-          <Text style={styles.askTitle}>Ask Finn</Text>
-          <Text style={styles.askText}>
-            Ask why spend changed, what is drifting, or where your blind spot is.
-          </Text>
-          <TextInput
-            style={styles.askInput}
-            value={question}
-            onChangeText={setQuestion}
-            placeholder="Why did I spend more last week?"
-            placeholderTextColor="#5f5f5f"
-          />
-          <View style={styles.suggestionRow}>
-            {(feedQuery.data?.suggestedQuestions ?? []).map((entry) => (
-              <Pressable key={entry} style={styles.suggestionChip} onPress={() => setQuestion(entry)}>
-                <Text style={styles.suggestionLabel}>{entry}</Text>
-              </Pressable>
-            ))}
-          </View>
-          {askError ? <Text style={styles.askError}>{askError}</Text> : null}
-          <Pressable
-            style={styles.askButton}
-            disabled={askMutation.isPending || question.trim().length < 4}
-            onPress={() => void askMutation.mutateAsync(question.trim())}
-          >
-            {askMutation.isPending ? (
-              <ActivityIndicator color="#050505" />
-            ) : (
-              <Text style={styles.askButtonLabel}>Ask your money</Text>
-            )}
-          </Pressable>
-
-          {askMutation.data ? (
-            <View style={styles.answerCard}>
-              <Text style={styles.answerLabel}>Finn</Text>
-              <Text style={styles.answerBody}>{askMutation.data.answer}</Text>
-              {!!askMutation.data.supportingSignals.length && (
-                <View style={styles.supportStack}>
-                  {askMutation.data.supportingSignals.map((entry) => (
-                    <View key={entry.key} style={styles.supportCard}>
-                      <Text style={styles.supportTitle}>{entry.title}</Text>
-                      <Text style={styles.supportText}>{entry.summary}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          ) : null}
-        </View>
 
         {feedQuery.data?.insights?.length ? (
           <View style={styles.stack}>
@@ -380,102 +306,6 @@ const styles = StyleSheet.create({
     color: "#8ca07d",
     fontSize: 13,
     lineHeight: 20,
-  },
-  askCard: {
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: "#1b1b1b",
-    backgroundColor: "#0c0c0c",
-    padding: 18,
-    gap: 12,
-  },
-  askTitle: {
-    color: "#f7f7f7",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  askText: {
-    color: "#8f8f8f",
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  askInput: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#1f1f1f",
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    color: "#f7f7f7",
-    backgroundColor: "#101010",
-    fontSize: 15,
-  },
-  suggestionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  suggestionChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: "#121212",
-    borderWidth: 1,
-    borderColor: "#212121",
-  },
-  suggestionLabel: {
-    color: "#b3b3b3",
-    fontSize: 12,
-  },
-  askError: {
-    color: "#f1c0c0",
-    fontSize: 13,
-  },
-  askButton: {
-    borderRadius: 999,
-    backgroundColor: "#f4f4f4",
-    paddingVertical: 15,
-    alignItems: "center",
-  },
-  askButtonLabel: {
-    color: "#050505",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  answerCard: {
-    borderRadius: 22,
-    backgroundColor: "#f4f4f4",
-    padding: 16,
-    gap: 10,
-  },
-  answerLabel: {
-    color: "#4f4f4f",
-    fontSize: 11,
-    letterSpacing: 1.8,
-    textTransform: "uppercase",
-  },
-  answerBody: {
-    color: "#151515",
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  supportStack: {
-    gap: 8,
-  },
-  supportCard: {
-    borderRadius: 16,
-    backgroundColor: "#e7e7e7",
-    padding: 12,
-    gap: 4,
-  },
-  supportTitle: {
-    color: "#191919",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  supportText: {
-    color: "#444444",
-    fontSize: 13,
-    lineHeight: 19,
   },
   stack: {
     gap: 12,
