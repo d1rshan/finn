@@ -17,11 +17,9 @@ function FinnTabButton({ accessibilityState, children, onPress, label }: FinnTab
 
   return (
     <Pressable onPress={onPress} style={styles.button}>
-      <View style={[styles.segment, isSelected ? styles.segmentActive : null]}>
-        <View style={styles.iconWrap}>{children}</View>
-        <Text style={[styles.segmentLabel, isSelected ? styles.segmentLabelActive : null]}>
-          {label}
-        </Text>
+      <View style={styles.stack}>
+        <View style={[styles.iconWrap, isSelected ? styles.iconWrapActive : null]}>{children}</View>
+        <Text style={[styles.label, isSelected ? styles.labelActive : null]}>{label}</Text>
       </View>
     </Pressable>
   );
@@ -81,49 +79,54 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     position: "absolute",
-    left: 20,
-    right: 20,
-    bottom: 22,
-    height: 64,
-    borderRadius: 999,
+    left: 16,
+    right: 16,
+    bottom: 18,
+    height: 78,
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: "#171717",
-    backgroundColor: "#0d0d0d",
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-    borderTopWidth: 1,
+    borderColor: "#1b1b1b",
+    backgroundColor: "rgba(10, 10, 10, 0.96)",
+    paddingHorizontal: 8,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderTopWidth: 0,
     elevation: 0,
     shadowOpacity: 0,
   },
   tabBarItem: {
-    height: 54,
+    height: 60,
   },
   button: {
     flex: 1,
     justifyContent: "center",
   },
-  segment: {
-    minHeight: 48,
-    borderRadius: 999,
-    flexDirection: "row",
+  stack: {
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-  },
-  segmentActive: {
-    backgroundColor: "#f4f4f4",
+    gap: 6,
   },
   iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#1f1f1f",
+    backgroundColor: "#111111",
   },
-  segmentLabel: {
+  iconWrapActive: {
+    backgroundColor: "#f4f4f4",
+    borderColor: "#f4f4f4",
+  },
+  label: {
     color: "#8b8b8b",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "600",
+    letterSpacing: 0.2,
   },
-  segmentLabelActive: {
-    color: "#050505",
+  labelActive: {
+    color: "#f4f4f4",
   },
 });
