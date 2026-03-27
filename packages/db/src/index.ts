@@ -2,6 +2,9 @@ import { env } from "@finn/env/server";
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 
+export * from "./domain";
+export * from "./schema";
+export { and, asc, desc, eq, gte, lt } from "drizzle-orm";
 import * as schema from "./schema";
 
 export function createDb() {
