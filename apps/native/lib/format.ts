@@ -1,4 +1,9 @@
-import type { ExpenseCategory, ReportMetric, ReportPeriodType } from "@/lib/finn-types";
+import type {
+  AnalyticsCategoryBreakdown,
+  ExpenseCategory,
+  ReportMetric,
+  ReportPeriodType,
+} from "@/lib/finn-types";
 
 const currencyFormatter = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -45,4 +50,12 @@ export function formatMetricValue(metric: ReportMetric) {
 
   const changePrefix = metric.change > 0 ? "+" : "";
   return `${formatCurrency(metric.value)} (${changePrefix}${metric.change}%)`;
+}
+
+export function formatAnalyticsCategory(category: AnalyticsCategoryBreakdown["category"]) {
+  if (category === "other") {
+    return "Other";
+  }
+
+  return formatCategory(category);
 }

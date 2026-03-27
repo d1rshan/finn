@@ -1,9 +1,11 @@
 import {
+  expenseCategories,
   expense,
   insight,
   report,
   type ExpenseCategory,
   type InsightMetadata,
+  type ReportPeriodType,
   and,
   asc,
   desc,
@@ -20,6 +22,7 @@ import {
 } from "@/lib/analytics";
 
 type ExpenseRow = typeof expense.$inferSelect;
+type AnalyticsPeriod = "weekly" | "monthly";
 
 const INR_FORMATTER = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -84,8 +87,14 @@ function previousPeriodEnd(date: Date, periodType: "weekly" | "monthly") {
     : new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
+function formatPeriodTitle(periodType: ReportPeriodType, periodStart: Date) {
+  return periodType === "weekly"
+    ? `Week of ${periodStart.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
+    : periodStart.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+}
+
 function buildReportSummary(
-  periodType: "weekly" | "monthly",
+  periodType: ReportPeriodType,
   expensesForPeriod: ExpenseRow[],
   personaLabel?: string | null,
 ) {
@@ -325,15 +334,8 @@ async function rebuildReports(userId: string, expensesForUser: ExpenseRow[]) {
       periodType: period.periodType,
       periodStart: period.periodStart,
       periodEnd: period.periodEnd,
-      title:
-        period.periodType === "weekly"
-          ? `Week of ${period.periodStart.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
-          : period.periodStart.toLocaleDateString("en-IN", { month: "long", year: "numeric" }),
-      summary: buildReportSummary(
-        period.periodType,
-        period.expensesForPeriod,
-        snapshot.persona?.label ?? null,
-      ),
+      title: formatPeriodTitle(period.periodType, period.periodStart),
+      summary: buildReportSummary(period.periodType, period.expensesForPeriod, snapshot.persona?.label ?? null),
       metadata: buildReportMetadataFromSnapshot(snapshot),
       createdAt: period.periodEnd,
     });
@@ -500,6 +502,87 @@ export async function listExpensesForRange(args: {
     .orderBy(desc(expense.occurredAt));
 }
 
+function buildAnalyticsLabel(period: AnalyticsPeriod, periodStart: Date) {
+  return period === "weekly"
+    ? periodStart.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+    : periodStart.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+}
+
+function buildAnalyticsRangeLabel(period: AnalyticsPeriod, periodStart: Date, periodEnd: Date) {
+  if (period === "weekly") {
+    const endDate = new Date(periodEnd.getTime() - 1);
+    return `${periodStart.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} - ${endDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
+  }
+
+  return periodStart.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+}
+
+function buildAnalyticsSummary(expensesForPeriod: ExpenseRow[]) {
+  const totalSpend = sumExpenses(expensesForPeriod);
+  const transactionCount = expensesForPeriod.length;
+
+  const categoryTotals = expenseCategories.map((category) => ({
+    category,
+    amountMinor: sumExpenses(expensesForPeriod.filter((entry) => entry.category === category)),
+  }));
+
+  const topCategory = categoryTotals
+    .filter((entry) => entry.amountMinor > 0)
+    .sort((a, b) => b.amountMinor - a.amountMinor)[0] ?? null;
+
+  const merchantMap = new Map<string, { amountMinor: number; count: number }>();
+  for (const entry of expensesForPeriod) {
+    const current = merchantMap.get(entry.merchantName) ?? { amountMinor: 0, count: 0 };
+    merchantMap.set(entry.merchantName, {
+      amountMinor: current.amountMinor + entry.amountMinor,
+      count: current.count + 1,
+    });
+  }
+
+  const topMerchant =
+    [...merchantMap.entries()]
+      .sort((a, b) => b[1].amountMinor - a[1].amountMinor)
+      .map(([merchantName, value]) => ({
+        merchantName,
+        amountMinor: value.amountMinor,
+        count: value.count,
+      }))[0] ?? null;
+
+  const categoryBreakdown = categoryTotals
+    .filter((entry) => entry.amountMinor > 0)
+    .sort((a, b) => b.amountMinor - a.amountMinor)
+    .slice(0, 4)
+    .map((entry) => ({
+      category: entry.category,
+      amountMinor: entry.amountMinor,
+      percentage: totalSpend > 0 ? Number(((entry.amountMinor / totalSpend) * 100).toFixed(1)) : 0,
+    }));
+
+  const otherAmountMinor =
+    totalSpend - categoryBreakdown.reduce((sum, entry) => sum + entry.amountMinor, 0);
+
+  if (otherAmountMinor > 0) {
+    categoryBreakdown.push({
+      category: "other",
+      amountMinor: otherAmountMinor,
+      percentage: totalSpend > 0 ? Number(((otherAmountMinor / totalSpend) * 100).toFixed(1)) : 0,
+    });
+  }
+
+  return {
+    totalSpend,
+    transactionCount,
+    topCategory: topCategory
+      ? {
+          category: topCategory.category,
+          amountMinor: topCategory.amountMinor,
+        }
+      : null,
+    topMerchant,
+    categoryBreakdown,
+  };
+}
+
 export async function askMoneyQuestion(userId: string, question: string) {
   const expensesForUser = await db
     .select()
@@ -533,4 +616,57 @@ export async function askMoneyQuestion(userId: string, question: string) {
     previousExpenses,
     snapshot,
   });
+}
+
+export async function getAnalytics(userId: string, period: AnalyticsPeriod) {
+  const expensesForUser = await db
+    .select()
+    .from(expense)
+    .where(eq(expense.userId, userId))
+    .orderBy(desc(expense.occurredAt));
+
+  const buckets = new Map<
+    string,
+    {
+      periodStart: Date;
+      periodEnd: Date;
+      expensesForPeriod: ExpenseRow[];
+    }
+  >();
+
+  for (const entry of expensesForUser) {
+    const periodStart = period === "weekly" ? startOfWeek(entry.occurredAt) : startOfMonth(entry.occurredAt);
+    const periodEnd = period === "weekly" ? endOfWeek(entry.occurredAt) : endOfMonth(entry.occurredAt);
+    const bucketKey = periodStart.toISOString();
+    const bucket = buckets.get(bucketKey) ?? {
+      periodStart,
+      periodEnd,
+      expensesForPeriod: [],
+    };
+    bucket.expensesForPeriod.push(entry);
+    buckets.set(bucketKey, bucket);
+  }
+
+  const periods = [...buckets.values()]
+    .sort((a, b) => b.periodStart.getTime() - a.periodStart.getTime())
+    .slice(0, period === "weekly" ? 8 : 6)
+    .reverse()
+    .map((bucket) => {
+      const summary = buildAnalyticsSummary(bucket.expensesForPeriod);
+
+      return {
+        id: `${period}:${bucket.periodStart.toISOString()}`,
+        label: buildAnalyticsLabel(period, bucket.periodStart),
+        rangeLabel: buildAnalyticsRangeLabel(period, bucket.periodStart, bucket.periodEnd),
+        periodStart: bucket.periodStart,
+        periodEnd: bucket.periodEnd,
+        ...summary,
+      };
+    });
+
+  return {
+    period,
+    selectedPeriodId: periods[periods.length - 1]?.id ?? null,
+    periods,
+  };
 }

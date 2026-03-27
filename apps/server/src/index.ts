@@ -11,6 +11,7 @@ import {
   askMoneyQuestion,
   createExpenseForUser,
   deleteExpenseForUser,
+  getAnalytics,
   getExpenseFeed,
   getReportDetail,
   listExpenses,
@@ -46,6 +47,8 @@ const createExpenseSchema = z.object({
 const askMoneySchema = z.object({
   question: z.string().trim().min(4).max(240),
 });
+
+const analyticsPeriodSchema = z.enum(["weekly", "monthly"]).default("weekly");
 
 api.get("/feed", async (c) => {
   const session = await requireSession(c);
@@ -101,6 +104,14 @@ api.get("/reports", async (c) => {
   return c.json({
     reports: payload,
   });
+});
+
+api.get("/analytics", async (c) => {
+  const session = await requireSession(c);
+  const period = analyticsPeriodSchema.parse(c.req.query("period"));
+  const payload = await getAnalytics(session.user.id, period);
+
+  return c.json(payload);
 });
 
 api.get("/reports/:reportId", async (c) => {

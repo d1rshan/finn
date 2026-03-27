@@ -88,3 +88,31 @@ export type ReportMetadata = {
     summary: string;
   } | null;
 };
+
+export type AnalyticsPeriodType = "weekly" | "monthly";
+
+export type AnalyticsCategoryBreakdown = {
+  category: ExpenseCategory | "other";
+  amountMinor: number;
+  percentage: number;
+};
+
+export type AnalyticsPeriodBucket = {
+  id: string;
+  label: string;
+  rangeLabel: string;
+  periodStart: string;
+  periodEnd: string;
+  totalSpend: number;
+  transactionCount: number;
+  topCategory: {
+    category: ExpenseCategory;
+    amountMinor: number;
+  } | null;
+  topMerchant: {
+    merchantName: string;
+    amountMinor: number;
+    count: number;
+  } | null;
+  categoryBreakdown: AnalyticsCategoryBreakdown[];
+};

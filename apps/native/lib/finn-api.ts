@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { authClient } from "@/lib/auth-client";
 import {
+  type AnalyticsPeriodBucket,
+  type AnalyticsPeriodType,
   expenseCategories,
   type BehavioralPersona,
   type ExpenseCategory,
@@ -143,6 +145,18 @@ export function useReportDetailQuery(reportId?: string) {
         report: ReportDto;
         expenses: ExpenseDto[];
       }>(`/reports/${reportId}`),
+  });
+}
+
+export function useAnalyticsQuery(period: AnalyticsPeriodType) {
+  return useQuery({
+    queryKey: ["analytics", period],
+    queryFn: () =>
+      apiRequest<{
+        period: AnalyticsPeriodType;
+        selectedPeriodId: string | null;
+        periods: AnalyticsPeriodBucket[];
+      }>(`/analytics?period=${period}`),
   });
 }
 

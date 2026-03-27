@@ -39,10 +39,17 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="analytics"
+        options={{
+          title: "Analytics",
+          tabBarIcon: ({ color, size }) => <Ionicons name="pie-chart" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="reports"
         options={{
           title: "Reports",
-          tabBarIcon: ({ color, size }) => <Ionicons name="bar-chart" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="document-text" color={color} size={size} />,
         }}
       />
     </Tabs>
