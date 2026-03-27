@@ -1,15 +1,39 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Link, type Href } from "expo-router";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMutation } from "@tanstack/react-query";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import { Container } from "@/components/container";
 import { authClient } from "@/lib/auth-client";
 import { formatCategory, formatCurrency, formatDateTime } from "@/lib/format";
-import { useFeedQuery } from "@/lib/finn-api";
+import { askFinn, useFeedQuery } from "@/lib/finn-api";
 
 export default function HomeScreen() {
   const feedQuery = useFeedQuery();
   const session = authClient.useSession();
+  const [question, setQuestion] = useState("");
+  const [askError, setAskError] = useState<string | null>(null);
+  const askMutation = useMutation({
+    mutationFn: askFinn,
+    onError(error) {
+      setAskError(error instanceof Error ? error.message : "Finn could not answer right now.");
+    },
+    onSuccess() {
+      setAskError(null);
+    },
+  });
+
+  const snapshot = feedQuery.data?.snapshot;
 
   return (
     <Container>
@@ -44,6 +68,67 @@ export default function HomeScreen() {
           </Text>
         </View>
 
+        {snapshot?.persona ? (
+          <View style={styles.personaCard}>
+            <Text style={styles.personaEyebrow}>Behavioral persona</Text>
+            <Text style={styles.personaTitle}>{snapshot.persona.label}</Text>
+            <Text style={styles.personaText}>{snapshot.persona.summary}</Text>
+            {snapshot.emotionalSpendingFingerprint ? (
+              <Text style={styles.personaFootnote}>{snapshot.emotionalSpendingFingerprint}</Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        <View style={styles.askCard}>
+          <Text style={styles.askTitle}>Ask Finn</Text>
+          <Text style={styles.askText}>
+            Ask why spend changed, what is drifting, or where your blind spot is.
+          </Text>
+          <TextInput
+            style={styles.askInput}
+            value={question}
+            onChangeText={setQuestion}
+            placeholder="Why did I spend more last week?"
+            placeholderTextColor="#5f5f5f"
+          />
+          <View style={styles.suggestionRow}>
+            {(feedQuery.data?.suggestedQuestions ?? []).map((entry) => (
+              <Pressable key={entry} style={styles.suggestionChip} onPress={() => setQuestion(entry)}>
+                <Text style={styles.suggestionLabel}>{entry}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {askError ? <Text style={styles.askError}>{askError}</Text> : null}
+          <Pressable
+            style={styles.askButton}
+            disabled={askMutation.isPending || question.trim().length < 4}
+            onPress={() => void askMutation.mutateAsync(question.trim())}
+          >
+            {askMutation.isPending ? (
+              <ActivityIndicator color="#050505" />
+            ) : (
+              <Text style={styles.askButtonLabel}>Ask your money</Text>
+            )}
+          </Pressable>
+
+          {askMutation.data ? (
+            <View style={styles.answerCard}>
+              <Text style={styles.answerLabel}>Finn</Text>
+              <Text style={styles.answerBody}>{askMutation.data.answer}</Text>
+              {!!askMutation.data.supportingSignals.length && (
+                <View style={styles.supportStack}>
+                  {askMutation.data.supportingSignals.map((entry) => (
+                    <View key={entry.key} style={styles.supportCard}>
+                      <Text style={styles.supportTitle}>{entry.title}</Text>
+                      <Text style={styles.supportText}>{entry.summary}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : null}
+        </View>
+
         {feedQuery.data?.insights?.length ? (
           <View style={styles.stack}>
             {feedQuery.data.insights.map((entry, index) => (
@@ -55,8 +140,12 @@ export default function HomeScreen() {
                   <Text style={styles.messageSender}>Finn</Text>
                   <Text style={styles.messageDate}>{formatDateTime(entry.createdAt)}</Text>
                 </View>
-                <Text style={styles.messageTitle}>{entry.title}</Text>
-                <Text style={styles.messageBody}>{entry.body}</Text>
+                <Text style={[styles.messageTitle, index === 0 ? styles.messageTitlePrimary : null]}>
+                  {entry.title}
+                </Text>
+                <Text style={[styles.messageBody, index === 0 ? styles.messageBodyPrimary : null]}>
+                  {entry.body}
+                </Text>
               </View>
             ))}
           </View>
@@ -76,6 +165,20 @@ export default function HomeScreen() {
             Add one
           </Link>
         </View>
+
+        {snapshot?.behavioralSignals?.length ? (
+          <View style={styles.signalCard}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Behavioral signals</Text>
+            </View>
+            {snapshot.behavioralSignals.slice(0, 3).map((entry) => (
+              <View key={entry.key} style={styles.signalRow}>
+                <Text style={styles.signalTitle}>{entry.title}</Text>
+                <Text style={styles.signalText}>{entry.summary}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <View style={styles.listCard}>
           {feedQuery.data?.recentExpenses?.length ? (
@@ -193,6 +296,131 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
   },
+  personaCard: {
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "#1d2217",
+    backgroundColor: "#11170e",
+    padding: 20,
+    gap: 10,
+  },
+  personaEyebrow: {
+    color: "#93a884",
+    fontSize: 11,
+    letterSpacing: 1.8,
+    textTransform: "uppercase",
+  },
+  personaTitle: {
+    color: "#f1f7eb",
+    fontSize: 22,
+    fontWeight: "700",
+  },
+  personaText: {
+    color: "#c3ceb8",
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  personaFootnote: {
+    color: "#8ca07d",
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  askCard: {
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "#1b1b1b",
+    backgroundColor: "#0c0c0c",
+    padding: 18,
+    gap: 12,
+  },
+  askTitle: {
+    color: "#f7f7f7",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  askText: {
+    color: "#8f8f8f",
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  askInput: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#1f1f1f",
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    color: "#f7f7f7",
+    backgroundColor: "#101010",
+    fontSize: 15,
+  },
+  suggestionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  suggestionChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "#121212",
+    borderWidth: 1,
+    borderColor: "#212121",
+  },
+  suggestionLabel: {
+    color: "#b3b3b3",
+    fontSize: 12,
+  },
+  askError: {
+    color: "#f1c0c0",
+    fontSize: 13,
+  },
+  askButton: {
+    borderRadius: 999,
+    backgroundColor: "#f4f4f4",
+    paddingVertical: 15,
+    alignItems: "center",
+  },
+  askButtonLabel: {
+    color: "#050505",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  answerCard: {
+    borderRadius: 22,
+    backgroundColor: "#f4f4f4",
+    padding: 16,
+    gap: 10,
+  },
+  answerLabel: {
+    color: "#4f4f4f",
+    fontSize: 11,
+    letterSpacing: 1.8,
+    textTransform: "uppercase",
+  },
+  answerBody: {
+    color: "#151515",
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  supportStack: {
+    gap: 8,
+  },
+  supportCard: {
+    borderRadius: 16,
+    backgroundColor: "#e7e7e7",
+    padding: 12,
+    gap: 4,
+  },
+  supportTitle: {
+    color: "#191919",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  supportText: {
+    color: "#444444",
+    fontSize: 13,
+    lineHeight: 19,
+  },
   stack: {
     gap: 12,
   },
@@ -225,15 +453,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   messageTitle: {
-    color: "#050505",
+    color: "#f7f7f7",
     fontSize: 20,
     lineHeight: 26,
     fontWeight: "600",
   },
   messageBody: {
-    color: "#2b2b2b",
+    color: "#afafaf",
     fontSize: 14,
     lineHeight: 22,
+  },
+  messageTitlePrimary: {
+    color: "#050505",
+  },
+  messageBodyPrimary: {
+    color: "#2b2b2b",
   },
   emptyCard: {
     borderRadius: 24,
@@ -274,6 +508,30 @@ const styles = StyleSheet.create({
     backgroundColor: "#090909",
     padding: 16,
     gap: 14,
+  },
+  signalCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#1b1b1b",
+    backgroundColor: "#090909",
+    padding: 16,
+    gap: 12,
+  },
+  signalRow: {
+    gap: 4,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#171717",
+  },
+  signalTitle: {
+    color: "#f2f2f2",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  signalText: {
+    color: "#8a8a8a",
+    fontSize: 13,
+    lineHeight: 19,
   },
   row: {
     flexDirection: "row",
