@@ -3,7 +3,9 @@ import { Link, type Href } from "expo-router";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import {
+
   ActivityIndicator,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -34,6 +36,7 @@ export default function HomeScreen() {
   });
 
   const snapshot = feedQuery.data?.snapshot;
+  const [isAccountSheetOpen, setIsAccountSheetOpen] = useState(false);
 
   return (
     <Container>
@@ -53,11 +56,16 @@ export default function HomeScreen() {
             <Text style={styles.title}>Quietly watching what your money is doing.</Text>
           </View>
 
-          <View style={styles.headerActions}>
+          <Pressable
+            style={styles.headerActions}
+            onPress={() => {
+              setIsAccountSheetOpen(true);
+            }}
+          >
             <Text style={styles.userInitial}>
               {session.data?.user?.name?.slice(0, 1).toUpperCase() ?? "F"}
             </Text>
-          </View>
+          </Pressable>
         </View>
 
         <View style={styles.heroCard}>
@@ -231,6 +239,49 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={isAccountSheetOpen}
+        onRequestClose={() => {
+          setIsAccountSheetOpen(false);
+        }}
+      >
+        <View style={styles.sheetRoot}>
+          <Pressable
+            style={styles.sheetBackdrop}
+            onPress={() => {
+              setIsAccountSheetOpen(false);
+            }}
+          />
+
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetEyebrow}>Account</Text>
+            <Text style={styles.sheetTitle}>{session.data?.user?.name ?? "Finn user"}</Text>
+            <Text style={styles.sheetEmail}>{session.data?.user?.email ?? "No email found"}</Text>
+
+            <View style={styles.sheetCard}>
+              <Text style={styles.sheetCardLabel}>Authentication</Text>
+              <Text style={styles.sheetCardText}>
+                You are signed in with Better Auth. This sheet is the home for session controls in
+                v1.
+              </Text>
+            </View>
+
+            <Pressable
+              style={styles.logoutButton}
+              onPress={() => {
+                setIsAccountSheetOpen(false);
+                authClient.signOut();
+              }}
+            >
+              <Text style={styles.logoutLabel}>Log out</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </Container>
   );
 }
@@ -589,5 +640,80 @@ const styles = StyleSheet.create({
     color: "#929292",
     fontSize: 14,
     lineHeight: 21,
+  },
+  sheetRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+  },
+  sheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: "#1b1b1b",
+    backgroundColor: "#0a0a0a",
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 28,
+    gap: 14,
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: "#2a2a2a",
+    marginBottom: 8,
+  },
+  sheetEyebrow: {
+    color: "#777777",
+    fontSize: 11,
+    letterSpacing: 2.2,
+    textTransform: "uppercase",
+  },
+  sheetTitle: {
+    color: "#f7f7f7",
+    fontSize: 24,
+    fontWeight: "600",
+  },
+  sheetEmail: {
+    color: "#929292",
+    fontSize: 14,
+  },
+  sheetCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#1b1b1b",
+    backgroundColor: "#101010",
+    padding: 16,
+    gap: 8,
+  },
+  sheetCardLabel: {
+    color: "#f4f4f4",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  sheetCardText: {
+    color: "#8b8b8b",
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  logoutButton: {
+    marginTop: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    paddingVertical: 16,
+    alignItems: "center",
+    backgroundColor: "#f4f4f4",
+  },
+  logoutLabel: {
+    color: "#050505",
+    fontSize: 15,
+    fontWeight: "700",
   },
 });
