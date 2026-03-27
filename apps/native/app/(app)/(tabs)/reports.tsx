@@ -33,8 +33,10 @@ export default function ReportsScreen() {
                   <Text style={styles.badge}>{formatPeriodType(entry.periodType)}</Text>
                   <Text style={styles.date}>{formatDateTime(entry.periodStart)}</Text>
                 </View>
-                <Text style={styles.cardTitle}>{entry.title}</Text>
-                <Text style={styles.summary}>{entry.summary}</Text>
+                <View style={styles.cardBody}>
+                  <Text style={styles.cardTitle}>{entry.title}</Text>
+                  <Text style={styles.summary}>{entry.summary}</Text>
+                </View>
                 <View style={styles.metricsRow}>
                   {entry.metadata.metrics.slice(0, 3).map((metric: (typeof entry.metadata.metrics)[number]) => (
                     <View key={metric.label} style={styles.metric}>
@@ -99,7 +101,11 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   cardMeta: {
-    gap: 6,
+    gap: 4,
+  },
+  cardBody: {
+    gap: 8,
+    paddingTop: 2,
   },
   badge: {
     color: "#7e7e7e",
@@ -110,18 +116,18 @@ const styles = StyleSheet.create({
   date: {
     color: "#6e6e6e",
     fontSize: 12,
+    lineHeight: 16,
   },
   cardTitle: {
     color: "#f7f7f7",
-    fontSize: 20,
-    lineHeight: 26,
+    fontSize: 17,
+    lineHeight: 23,
     fontWeight: "600",
   },
   summary: {
     color: "#929292",
-    fontSize: 14,
-    lineHeight: 23,
-    paddingRight: 8,
+    fontSize: 13,
+    lineHeight: 21,
   },
   metricsRow: {
     flexDirection: "row",

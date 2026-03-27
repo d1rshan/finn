@@ -222,11 +222,16 @@ export default function HomeScreen() {
                 style={styles.reportCard}
               >
                 <View style={styles.reportHead}>
-                  <Text style={styles.reportBadge}>{entry.periodType.toUpperCase()}</Text>
+                  <View style={styles.reportMeta}>
+                    <Text style={styles.reportBadge}>{entry.periodType.toUpperCase()}</Text>
+                    <Text style={styles.reportDate}>{formatDateTime(entry.createdAt)}</Text>
+                  </View>
                   <Ionicons name="arrow-forward" size={18} color="#6d6d6d" />
                 </View>
-                <Text style={styles.reportTitle}>{entry.title}</Text>
-                <Text style={styles.reportSummary}>{entry.summary}</Text>
+                <View style={styles.reportBody}>
+                  <Text style={styles.reportTitle}>{entry.title}</Text>
+                  <Text style={styles.reportSummary}>{entry.summary}</Text>
+                </View>
               </Link>
             ))
           ) : (
@@ -624,7 +629,16 @@ const styles = StyleSheet.create({
   reportHead: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  reportMeta: {
+    flex: 1,
+    gap: 4,
+  },
+  reportBody: {
+    gap: 8,
+    paddingTop: 2,
   },
   reportBadge: {
     color: "#7f7f7f",
@@ -632,17 +646,21 @@ const styles = StyleSheet.create({
     letterSpacing: 1.8,
     textTransform: "uppercase",
   },
+  reportDate: {
+    color: "#666666",
+    fontSize: 12,
+    lineHeight: 16,
+  },
   reportTitle: {
     color: "#f7f7f7",
-    fontSize: 19,
-    lineHeight: 25,
+    fontSize: 16,
+    lineHeight: 22,
     fontWeight: "600",
   },
   reportSummary: {
     color: "#929292",
-    fontSize: 14,
-    lineHeight: 23,
-    paddingRight: 8,
+    fontSize: 13,
+    lineHeight: 21,
   },
   sheetRoot: {
     flex: 1,
