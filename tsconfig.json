@@ -1,0 +1,3 @@
+{
+  "extends": "@finn/config/tsconfig.base.json"
+}

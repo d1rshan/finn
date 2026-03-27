@@ -1,0 +1,32 @@
+{
+  "name": "finn",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "check-types": "turbo check-types",
+    "dev:native": "turbo -F native dev",
+    "dev:server": "turbo -F server dev",
+    "db:push": "turbo -F @finn/db db:push",
+    "db:studio": "turbo -F @finn/db db:studio",
+    "db:generate": "turbo -F @finn/db db:generate",
+    "db:migrate": "turbo -F @finn/db db:migrate"
+  },
+  "dependencies": {
+    "@finn/env": "workspace:*",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@finn/config": "workspace:*",
+    "@types/node": "catalog:",
+    "turbo": "^2.8.12",
+    "typescript": "catalog:"
+  },
+  "packageManager": "pnpm@10.30.3"
+}
