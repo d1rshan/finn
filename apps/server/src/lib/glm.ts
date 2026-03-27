@@ -8,6 +8,10 @@ type AskFinnLlmArgs = {
   snapshot: AnalyticsSnapshot;
   currentExpenses: ExpenseLike[];
   previousExpenses: ExpenseLike[];
+  history: Array<{
+    role: "user" | "assistant";
+    content: string;
+  }>;
 };
 
 type GlmResponse = {
@@ -87,7 +91,7 @@ export async function askFinnWithGlm(args: AskFinnLlmArgs): Promise<string | nul
         {
           role: "system",
           content:
-            "You are Finn, a personal finance analyst. Answer only from the supplied analytics and transactions. Be specific, concise, and avoid making claims not supported by the data. If the data is insufficient, say so plainly. Use INR formatting where relevant. Do not mention being an AI model.",
+            "You are Finn, a personal finance analyst. Answer only from the supplied analytics, chat history, and transactions. Be specific, concise, and avoid making claims not supported by the data. If the data is insufficient, say so plainly. Use INR formatting where relevant. Do not mention being an AI model. Keep answers crisp and decision-useful.",
         },
         {
           role: "user",
@@ -96,12 +100,15 @@ export async function askFinnWithGlm(args: AskFinnLlmArgs): Promise<string | nul
             answer_shape: {
               instructions: [
                 "Return exactly JSON.",
-                "Keys: answer, suggestions, supportingSignalTitles.",
-                "answer must be a short paragraph, under 120 words.",
+                "Keys: answer, bullets, suggestions, supportingSignalTitles.",
+                "answer must be a short paragraph, under 90 words.",
+                "bullets must be an array of 1 to 3 sharp factual points grounded in the supplied data.",
                 "suggestions must be an array of 3 short follow-up questions.",
                 "supportingSignalTitles must be an array of titles taken from the provided signals only.",
+                "Do not hedge unnecessarily. Do not fabricate numbers or causes. If evidence is thin, say what is missing.",
               ],
             },
+            conversationHistory: args.history.slice(-8),
             question: args.question,
             analytics: {
               persona: args.snapshot.persona,
