@@ -243,7 +243,8 @@ const styles = StyleSheet.create({
   summary: {
     color: "#939393",
     fontSize: 15,
-    lineHeight: 22,
+    lineHeight: 24,
+    paddingRight: 8,
   },
   personaCard: {
     borderRadius: 24,
@@ -277,17 +278,17 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   metricRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    gap: 6,
   },
   metricLabel: {
     color: "#888888",
     fontSize: 14,
+    lineHeight: 18,
   },
   metricValue: {
     color: "#f4f4f4",
     fontSize: 14,
+    lineHeight: 20,
     fontWeight: "700",
   },
   dualCard: {
@@ -311,17 +312,18 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   miniRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+    paddingBottom: 2,
     gap: 12,
   },
   miniTitle: {
     color: "#d7d7d7",
     fontSize: 14,
+    lineHeight: 19,
   },
   miniValue: {
     color: "#7c7c7c",
     fontSize: 13,
+    lineHeight: 18,
   },
   signalRow: {
     gap: 4,
@@ -348,26 +350,28 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   expenseRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "flex-start",
     gap: 12,
   },
   expenseCopy: {
     flex: 1,
-    gap: 4,
+    gap: 5,
   },
   expenseTitle: {
     color: "#f7f7f7",
     fontSize: 15,
+    lineHeight: 20,
     fontWeight: "600",
   },
   expenseMeta: {
     color: "#818181",
     fontSize: 12,
+    lineHeight: 17,
   },
   expenseAmount: {
     color: "#f4f4f4",
     fontSize: 15,
+    lineHeight: 20,
     fontWeight: "700",
   },
   footnote: {

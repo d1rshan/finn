@@ -94,13 +94,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#1b1b1b",
     backgroundColor: "#0a0a0a",
-    padding: 18,
-    gap: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    gap: 14,
   },
   cardMeta: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    gap: 6,
   },
   badge: {
     color: "#7e7e7e",
@@ -115,31 +114,37 @@ const styles = StyleSheet.create({
   cardTitle: {
     color: "#f7f7f7",
     fontSize: 20,
+    lineHeight: 26,
     fontWeight: "600",
   },
   summary: {
     color: "#929292",
     fontSize: 14,
-    lineHeight: 21,
+    lineHeight: 23,
+    paddingRight: 8,
   },
   metricsRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 10,
   },
   metric: {
-    flex: 1,
+    minWidth: "47%",
+    flexGrow: 1,
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: "#171717",
-    gap: 4,
+    gap: 6,
   },
   metricLabel: {
     color: "#757575",
     fontSize: 12,
+    lineHeight: 16,
   },
   metricValue: {
     color: "#f4f4f4",
     fontSize: 14,
+    lineHeight: 19,
     fontWeight: "700",
   },
   emptyCard: {

@@ -617,8 +617,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#1b1b1b",
     backgroundColor: "#0b0b0b",
-    padding: 18,
-    gap: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    gap: 12,
   },
   reportHead: {
     flexDirection: "row",
@@ -633,13 +634,15 @@ const styles = StyleSheet.create({
   },
   reportTitle: {
     color: "#f7f7f7",
-    fontSize: 18,
+    fontSize: 19,
+    lineHeight: 25,
     fontWeight: "600",
   },
   reportSummary: {
     color: "#929292",
     fontSize: 14,
-    lineHeight: 21,
+    lineHeight: 23,
+    paddingRight: 8,
   },
   sheetRoot: {
     flex: 1,
