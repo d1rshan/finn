@@ -5,7 +5,7 @@ import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } 
 
 import { Container } from "@/components/container";
 import { authClient } from "@/lib/auth-client";
-import { formatCategory, formatCurrency, formatDateTime } from "@/lib/format";
+import { formatCategory, formatCurrency, formatDateTime, formatMemoryFactKind } from "@/lib/format";
 import { useFeedQuery } from "@/lib/finn-api";
 
 function severityTone(severity: "low" | "medium" | "high") {
@@ -52,8 +52,11 @@ export default function HomeScreen() {
         .slice(0, 3),
     [feedQuery.data?.snapshot.behavioralSignals, primaryInsight?.title],
   );
+  const memoryFacts = useMemo(() => (feedQuery.data?.memoryFacts ?? []).slice(0, 3), [feedQuery.data?.memoryFacts]);
   const recentExpenses = feedQuery.data?.recentExpenses ?? [];
-  const hasActivity = Boolean(primaryInsight || secondaryInsights.length || signalRows.length || recentExpenses.length);
+  const hasActivity = Boolean(
+    primaryInsight || secondaryInsights.length || signalRows.length || memoryFacts.length || recentExpenses.length,
+  );
   const tone = severityTone(primaryInsight?.severity ?? "low");
 
   return (
@@ -174,6 +177,27 @@ export default function HomeScreen() {
                     >
                       <Text style={styles.signalTitle}>{entry.title}</Text>
                       <Text style={styles.signalText}>{entry.summary}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {memoryFacts.length ? (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>What Finn remembers</Text>
+                </View>
+
+                <View style={styles.stack}>
+                  {memoryFacts.map((entry) => (
+                    <View key={entry.id} style={styles.memoryCard}>
+                      <View style={styles.memoryMeta}>
+                        <Text style={styles.memoryKind}>{formatMemoryFactKind(entry.kind)}</Text>
+                        <Text style={styles.memoryConfidence}>{entry.confidence}% confidence</Text>
+                      </View>
+                      <Text style={styles.memoryTitle}>{entry.title}</Text>
+                      <Text style={styles.memoryBody}>{entry.body}</Text>
                     </View>
                   ))}
                 </View>
@@ -450,6 +474,42 @@ const styles = StyleSheet.create({
     borderColor: "#171717",
     backgroundColor: "#090909",
     padding: 16,
+  },
+  memoryCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#191919",
+    backgroundColor: "#0a0a0a",
+    padding: 16,
+    gap: 8,
+  },
+  memoryMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  memoryKind: {
+    color: "#8b8b8b",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
+  memoryConfidence: {
+    color: "#5f5f5f",
+    fontSize: 12,
+  },
+  memoryTitle: {
+    color: "#f4f4f4",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "600",
+  },
+  memoryBody: {
+    color: "#8d8d8d",
+    fontSize: 13,
+    lineHeight: 20,
   },
   signalRow: {
     gap: 4,

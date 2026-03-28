@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Text,
   View,
-  Dimensions,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -19,11 +18,18 @@ import { Ionicons } from "@expo/vector-icons";
 import { Container } from "@/components/container";
 import {
   formatAnalyticsCategory,
-  formatCategory,
   formatCurrency,
+  formatMemoryFactKind,
+  formatMemoryNodeType,
 } from "@/lib/format";
 import { useAnalyticsQuery } from "@/lib/finn-api";
-import type { AnalyticsCategoryBreakdown, AnalyticsPeriodBucket, AnalyticsPeriodType } from "@/lib/finn-types";
+import type {
+  AnalyticsCategoryBreakdown,
+  AnalyticsPeriodBucket,
+  AnalyticsPeriodType,
+  FinancialMemoryFact,
+  FinancialMemoryNode,
+} from "@/lib/finn-types";
 
 const CATEGORY_ICONS: Record<string, keyof typeof Ionicons.prototype.constructor.name> = {
   food: "fast-food",
@@ -137,6 +143,30 @@ function CategoryProgress({
   );
 }
 
+function MemoryFactCard({ item }: { item: FinancialMemoryFact }) {
+  return (
+    <View style={styles.memoryFactCard}>
+      <View style={styles.memoryFactMeta}>
+        <Text style={styles.memoryFactKind}>{formatMemoryFactKind(item.kind)}</Text>
+        <Text style={styles.memoryFactConfidence}>{item.confidence}% confidence</Text>
+      </View>
+      <Text style={styles.memoryFactTitle}>{item.title}</Text>
+      <Text style={styles.memoryFactBody}>{item.body}</Text>
+    </View>
+  );
+}
+
+function MemoryNodeChip({ item }: { item: FinancialMemoryNode }) {
+  return (
+    <View style={styles.memoryNodeChip}>
+      <Text style={styles.memoryNodeLabel}>{item.label}</Text>
+      <Text style={styles.memoryNodeMeta}>
+        {formatMemoryNodeType(item.type)} · {item.confidence}%
+      </Text>
+    </View>
+  );
+}
+
 export default function AnalyticsScreen() {
   const [period, setPeriod] = useState<AnalyticsPeriodType>("weekly");
   const analyticsQuery = useAnalyticsQuery(period);
@@ -157,6 +187,8 @@ export default function AnalyticsScreen() {
   }, [periods]);
 
   const previousBucket = selectedIndex > 0 ? periods[selectedIndex - 1] : null;
+  const memoryFacts = analyticsQuery.data?.memory.facts ?? [];
+  const memoryNodes = analyticsQuery.data?.memory.nodes ?? [];
   const changePercentage = useMemo(() => {
     if (!previousBucket || previousBucket.totalSpend === 0) return null;
     return ((selectedBucket.totalSpend - previousBucket.totalSpend) / previousBucket.totalSpend) * 100;
@@ -290,6 +322,30 @@ export default function AnalyticsScreen() {
                 </View>
               )}
             </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Behavior memory</Text>
+              <View style={styles.memorySection}>
+                {memoryFacts.length ? (
+                  memoryFacts.slice(0, 3).map((item) => <MemoryFactCard key={item.id} item={item} />)
+                ) : (
+                  <View style={styles.memoryFactCard}>
+                    <Text style={styles.placeholder}>Finn needs more repeat behavior before memory forms.</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {memoryNodes.length ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Graph nodes</Text>
+                <View style={styles.memoryNodeWrap}>
+                  {memoryNodes.slice(0, 8).map((item) => (
+                    <MemoryNodeChip key={item.id} item={item} />
+                  ))}
+                </View>
+              </View>
+            ) : null}
           </>
         ) : (
           <View style={styles.emptyState}>
@@ -537,6 +593,68 @@ const styles = StyleSheet.create({
   merchantMeta: {
     color: "#7d7d7d",
     fontSize: 12,
+  },
+  memorySection: {
+    gap: 10,
+  },
+  memoryFactCard: {
+    backgroundColor: "#090909",
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#1b1b1b",
+    gap: 8,
+  },
+  memoryFactMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  memoryFactKind: {
+    color: "#8b8b8b",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
+  },
+  memoryFactConfidence: {
+    color: "#696969",
+    fontSize: 12,
+  },
+  memoryFactTitle: {
+    color: "#f6f6f6",
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: "600",
+  },
+  memoryFactBody: {
+    color: "#8a8a8a",
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  memoryNodeWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  memoryNodeChip: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#1d1d1d",
+    backgroundColor: "#0b0b0b",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  memoryNodeLabel: {
+    color: "#f3f3f3",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  memoryNodeMeta: {
+    color: "#767676",
+    fontSize: 11,
   },
   placeholder: {
     color: "#7f7f7f",

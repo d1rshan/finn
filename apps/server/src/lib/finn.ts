@@ -20,6 +20,12 @@ import {
   buildReportMetadataFromSnapshot,
 } from "@/lib/analytics";
 import { askFinnWithGemini } from "@/lib/gemini";
+import {
+  listMemoryFactsForUser,
+  listMemoryNodesForUser,
+  normalizeExpenseInput,
+  rebuildFinancialMemoryGraph,
+} from "@/lib/memory";
 
 type ExpenseRow = typeof expense.$inferSelect;
 type AnalyticsPeriod = "weekly" | "monthly";
@@ -371,15 +377,17 @@ export async function syncAnalyticsForUser(userId: string) {
   }
 
   await rebuildReports(userId, expensesForUser);
+  await rebuildFinancialMemoryGraph(userId, expensesForUser);
 }
 
 export async function getExpenseFeed(userId: string) {
   await syncAnalyticsForUser(userId);
 
-  const [insightsForUser, recentExpenses, expensesForUser] = await Promise.all([
+  const [insightsForUser, recentExpenses, expensesForUser, memoryFacts] = await Promise.all([
     db.select().from(insight).where(eq(insight.userId, userId)).orderBy(desc(insight.createdAt)).limit(8),
     db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)).limit(8),
     db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)).limit(90),
+    listMemoryFactsForUser(userId, 4),
   ]);
 
   const now = new Date();
@@ -396,12 +404,13 @@ export async function getExpenseFeed(userId: string) {
 
   return {
     insights: insightsForUser,
+    memoryFacts,
     recentExpenses,
     snapshot: feedSnapshot,
     suggestedQuestions: [
       "Why did I spend more last week?",
-      "What is my biggest financial blind spot?",
-      "Do I have any recurring charges?",
+      "What pattern is Finn most confident about?",
+      "Which habit is quietly driving my monthly drift?",
     ],
   };
 }
@@ -423,6 +432,11 @@ export async function createExpenseForUser(input: {
   occurredAt: Date;
   note?: string;
 }) {
+  const normalizedInput = normalizeExpenseInput({
+    merchantName: input.merchantName,
+    note: input.note,
+  });
+
   const [createdExpense] = await db
     .insert(expense)
     .values({
@@ -430,10 +444,10 @@ export async function createExpenseForUser(input: {
       userId: input.userId,
       amountMinor: input.amountMinor,
       currency: "INR",
-      merchantName: input.merchantName,
+      merchantName: normalizedInput.merchantName,
       category: input.category,
       occurredAt: input.occurredAt,
-      note: input.note,
+      note: normalizedInput.note,
     })
     .returning();
 
@@ -537,11 +551,10 @@ function buildAnalyticsSummary(expensesForPeriod: ExpenseRow[]) {
 }
 
 async function buildAskMoneyContext(userId: string) {
-  const expensesForUser = await db
-    .select()
-    .from(expense)
-    .where(eq(expense.userId, userId))
-    .orderBy(desc(expense.occurredAt));
+  const [expensesForUser, memoryFacts] = await Promise.all([
+    db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)),
+    listMemoryFactsForUser(userId, 6),
+  ]);
 
   const now = new Date();
   const currentWindowStart = startOfDay(subtractDays(now, 6));
@@ -567,6 +580,7 @@ async function buildAskMoneyContext(userId: string) {
     currentExpenses,
     previousExpenses,
     snapshot,
+    memoryFacts,
   };
 }
 
@@ -591,7 +605,7 @@ export async function askMoneyQuestion(
   question: string,
   history: Array<{ role: "user" | "assistant"; content: string }> = [],
 ) {
-  const { currentExpenses, previousExpenses, snapshot } = await buildAskMoneyContext(userId);
+  const { currentExpenses, previousExpenses, snapshot, memoryFacts } = await buildAskMoneyContext(userId);
 
   try {
     const llmContent = await askFinnWithGemini({
@@ -600,6 +614,7 @@ export async function askMoneyQuestion(
       previousExpenses,
       snapshot,
       history,
+      memoryFacts,
     });
 
     if (llmContent) {
@@ -623,11 +638,11 @@ export async function askMoneyQuestion(
 }
 
 export async function getAnalytics(userId: string, period: AnalyticsPeriod) {
-  const expensesForUser = await db
-    .select()
-    .from(expense)
-    .where(eq(expense.userId, userId))
-    .orderBy(desc(expense.occurredAt));
+  const [expensesForUser, memoryFacts, memoryNodes] = await Promise.all([
+    db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)),
+    listMemoryFactsForUser(userId, 6),
+    listMemoryNodesForUser(userId, 10),
+  ]);
 
   const buckets = new Map<
     string,
@@ -672,5 +687,9 @@ export async function getAnalytics(userId: string, period: AnalyticsPeriod) {
     period,
     selectedPeriodId: periods[periods.length - 1]?.id ?? null,
     periods,
+    memory: {
+      facts: memoryFacts,
+      nodes: memoryNodes,
+    },
   };
 }

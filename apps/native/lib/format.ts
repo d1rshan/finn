@@ -1,4 +1,9 @@
-import type { AnalyticsCategoryBreakdown, ExpenseCategory } from "@/lib/finn-types";
+import type {
+  AnalyticsCategoryBreakdown,
+  ExpenseCategory,
+  MemoryFactKind,
+  MemoryNodeType,
+} from "@/lib/finn-types";
 
 const currencyFormatter = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -36,4 +41,18 @@ export function formatAnalyticsCategory(category: AnalyticsCategoryBreakdown["ca
   }
 
   return formatCategory(category);
+}
+
+export function formatMemoryFactKind(kind: MemoryFactKind) {
+  return kind
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+export function formatMemoryNodeType(type: MemoryNodeType) {
+  return type
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }

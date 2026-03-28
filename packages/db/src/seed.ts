@@ -1,5 +1,4 @@
 import { db, expense, type ExpenseCategory } from "./index";
-import { eq } from "drizzle-orm";
 
 const userId = "Gm4Pofs5k0nWVDRVCjkRUqMNFtlK8Pvo";
 
