@@ -1,74 +1,198 @@
-# finn
+# Finn
 
-Finn is a mobile-first fintech app built in a Better T Stack monorepo. It starts as a manual expense tracker, but the product is shaped around continuous monitoring: you log the payment, Finn keeps the memory, watches for patterns, and produces insight messages plus weekly and monthly reports from your actual data.
+Finn is a mobile-first personal finance app built in a Turborepo monorepo. You log expenses manually; Finn watches for patterns in your spending and surfaces insights and weekly/monthly reports from your actual data. An AI chat interface (powered by Google Gemini) lets you ask questions about your finances in natural language.
 
-## Stack
-- `apps/native`: Expo + React Native app using Expo Router and Better Auth Expo client
-- `apps/server`: Hono API with Better Auth and Finn domain routes
-- `packages/db`: Drizzle ORM schema for auth, expenses, insights, and reports on Neon Postgres
-- `packages/auth`: Better Auth server configuration
-- `packages/env`: shared environment validation
+## Features
 
-## Current V1 Surface
-- Email/password authentication with Better Auth
-- Feed-first mobile UI in a black and white visual system
-- Manual expense logging with amount, merchant, category, note, and timestamp
-- Deterministic insight generation for:
-  - spending spikes
-  - recurring merchants
-  - category increases
-  - unusually large transactions
-  - daily spend streaks
-- Weekly and monthly report generation with structured metrics and summaries
+- **Email/password authentication** via Better Auth
+- **Manual expense logging** — amount, merchant, category, note, and timestamp
+- **Deterministic insight engine** — detects spending spikes, recurring merchants, category increases, unusually large transactions, and daily spend streaks
+- **Weekly & monthly reports** — structured metrics and plain-language summaries
+- **AI chat** — ask questions about your money, powered by Google Gemini
+- **Analytics tab** — visual breakdown of spending patterns
+- **Feed-first mobile UI** — clean black-and-white design
 
-## API
-The Hono server exposes:
-- `GET /api/feed`
-- `GET /api/expenses`
-- `POST /api/expenses`
-- `DELETE /api/expenses/:expenseId`
-- `GET /api/reports`
-- `GET /api/reports/:reportId`
-- Better Auth routes under `GET|POST /api/auth/*`
+## Prerequisites
 
-All Finn routes are authenticated and scoped to the signed-in user.
+- [Node.js](https://nodejs.org/) ≥ 20
+- [pnpm](https://pnpm.io/) ≥ 10 (`npm install -g pnpm`)
+- A [Neon](https://neon.tech/) PostgreSQL database (or any PostgreSQL instance)
+- (Optional) A [Google Gemini API key](https://aistudio.google.com/app/apikey) for AI chat
 
-## Database Model
-Auth tables come from Better Auth. Finn adds:
-- `expense`
-- `insight`
-- `report`
+## Installation
 
-See [packages/db/src/schema/finn.ts](/home/darsh/Desktop/dev/finn/packages/db/src/schema/finn.ts) for the current schema and [PLAN.md](/home/darsh/Desktop/dev/finn/PLAN.md) for the implementation plan.
+```bash
+# Clone the repository
+git clone https://github.com/d1rshan/finn.git
+cd finn
 
-## Local Setup
-1. Install dependencies:
-   ```bash
-   pnpm install
-   ```
-2. Configure `apps/server/.env` with:
-   - `DATABASE_URL`
-   - `BETTER_AUTH_SECRET`
-   - `BETTER_AUTH_URL`
-   - `CORS_ORIGIN`
-3. Configure the Expo app with `EXPO_PUBLIC_SERVER_URL`.
-4. Push the schema:
-   ```bash
-   pnpm run db:push
-   ```
-5. Start development:
-   ```bash
-   pnpm run dev
-   ```
+# Install all workspace dependencies
+pnpm install
+```
 
-## Useful Commands
-- `pnpm run dev`
-- `pnpm run dev:server`
-- `pnpm run dev:native`
-- `pnpm run check-types`
-- `pnpm run db:push`
-- `pnpm run db:studio`
+## Configuration
 
-## Planning Docs
-- [PLAN.md](/home/darsh/Desktop/dev/finn/PLAN.md)
-- [FUTURE.md](/home/darsh/Desktop/dev/finn/FUTURE.md)
+### Server (`apps/server/.env`)
+
+Create `apps/server/.env` with the following variables:
+
+```dotenv
+# PostgreSQL connection string (required)
+DATABASE_URL=postgresql://user:password@host/dbname
+
+# Better Auth secret — must be at least 32 characters (required)
+BETTER_AUTH_SECRET=your-secret-here
+
+# Public URL where the server is running (required)
+BETTER_AUTH_URL=http://localhost:3000
+
+# URL of the Expo/web client, used for CORS (required)
+CORS_ORIGIN=http://localhost:8081
+
+# Google Gemini credentials (optional — AI chat is disabled without these)
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta
+GEMINI_MODEL=gemini-2.5-flash
+
+# Runtime environment
+NODE_ENV=development
+```
+
+### Native app (`apps/native/.env`)
+
+Create `apps/native/.env` with:
+
+```dotenv
+# Full URL of the running server (required)
+EXPO_PUBLIC_SERVER_URL=http://localhost:3000
+```
+
+## Local Development
+
+### 1. Push the database schema
+
+```bash
+pnpm run db:push
+```
+
+### 2. Start everything (server + Expo)
+
+```bash
+pnpm run dev
+```
+
+Or start each part individually:
+
+```bash
+pnpm run dev:server   # Hono API only (hot-reloads with tsx)
+pnpm run dev:native   # Expo app only (opens Expo Go / simulator)
+```
+
+The server runs on `http://localhost:3000` by default. Scan the QR code from `expo start` to open the app on a device or simulator.
+
+### Running on a specific platform
+
+```bash
+cd apps/native
+pnpm run ios       # iOS simulator
+pnpm run android   # Android emulator
+pnpm run web       # Browser
+```
+
+## Build
+
+```bash
+# Build all packages and apps
+pnpm run build
+
+# Type-check all packages
+pnpm run check-types
+```
+
+The server build produces `apps/server/dist/index.mjs`, which can be started with:
+
+```bash
+node apps/server/dist/index.mjs
+```
+
+For mobile distribution, use [Expo EAS Build](https://docs.expo.dev/build/introduction/).
+
+## Database Commands
+
+```bash
+pnpm run db:push       # Apply schema changes directly to the database
+pnpm run db:generate   # Generate migration files from schema changes
+pnpm run db:migrate    # Run pending migrations
+pnpm run db:studio     # Open Drizzle Studio (visual DB browser)
+```
+
+## API Reference
+
+All routes under `/api/feed`, `/api/expenses`, and `/api/reports` require an active session.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/feed` | Insight feed for the signed-in user |
+| `GET` | `/api/expenses` | List all expenses |
+| `POST` | `/api/expenses` | Create a new expense |
+| `DELETE` | `/api/expenses/:expenseId` | Delete an expense |
+| `GET` | `/api/reports` | List all reports |
+| `GET` | `/api/reports/:reportId` | Get a specific report |
+| `GET\|POST` | `/api/auth/*` | Better Auth authentication routes |
+
+## Project Structure
+
+```
+finn/
+├── apps/
+│   ├── native/          # Expo + React Native app (Expo Router)
+│   │   ├── app/         # File-based routes: (auth)/*, (app)/(tabs)/*
+│   │   ├── components/  # Shared UI components
+│   │   └── lib/         # API clients and utilities
+│   └── server/          # Hono REST API
+│       └── src/
+│           ├── index.ts  # Server entry point
+│           └── lib/      # Domain logic (expenses, insights, reports, AI)
+├── packages/
+│   ├── auth/            # Better Auth server configuration
+│   ├── config/          # Shared TypeScript config
+│   ├── db/              # Drizzle ORM schema and migrations
+│   └── env/             # Environment variable validation (Zod)
+├── turbo.json           # Turborepo pipeline config
+└── pnpm-workspace.yaml  # pnpm monorepo config
+```
+
+### Database schema
+
+Better Auth provides its own auth tables. Finn adds:
+
+| Table | Purpose |
+|-------|---------|
+| `expense` | User-logged transactions |
+| `insight` | Generated insight messages |
+| `report` | Weekly/monthly summary reports |
+
+See [`packages/db/src/schema/finn.ts`](packages/db/src/schema/finn.ts) for the full schema.
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Mobile | React Native, Expo, Expo Router |
+| API | Hono, Node.js |
+| Auth | Better Auth |
+| Database | PostgreSQL (Neon), Drizzle ORM |
+| AI | Google Gemini via Vercel AI SDK |
+| Monorepo | Turborepo, pnpm workspaces |
+| Language | TypeScript |
+
+## Contributing
+
+1. Fork the repository and create a feature branch.
+2. Run `pnpm install` to set up dependencies.
+3. Make your changes, then run `pnpm run check-types` to verify types before opening a pull request.
+4. Open a PR describing what you changed and why.
+
+## License
+
+No license file is currently present in this repository. All rights reserved by the author unless otherwise stated.
