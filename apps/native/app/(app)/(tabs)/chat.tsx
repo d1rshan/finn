@@ -1,268 +1,242 @@
+import { useChat } from "@ai-sdk/react";
 import { Ionicons } from "@expo/vector-icons";
-import { useMutation } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { DefaultChatTransport } from "ai";
+import { fetch as expoFetch } from "expo/fetch";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { z } from "zod";
 
 import { Container } from "@/components/container";
+import { authClient } from "@/lib/auth-client";
 import { useFeedQuery } from "@/lib/finn-api";
 import { env } from "@finn/env/native";
-import { authClient } from "@/lib/auth-client";
 
-// Simple fallback if TextDecoder is missing in older environments
-const decoder = typeof TextDecoder !== "undefined" ? new TextDecoder() : {
-  decode: (v: Uint8Array) => String.fromCharCode(...v)
-};
+const supportingSignalSchema = z.object({
+  key: z.string(),
+  title: z.string(),
+  summary: z.string(),
+  severity: z.enum(["low", "medium", "high"]),
+});
 
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  isStreaming?: boolean;
-  bullets?: string[];
-  suggestions?: string[];
-  supportingSignals?: Array<{
-    key: string;
-    title: string;
-    summary: string;
-    severity: "low" | "medium" | "high";
-  }>;
-};
+const finnDataSchema = z.object({
+  bullets: z.array(z.string()),
+  suggestions: z.array(z.string()),
+  supportingSignals: z.array(supportingSignalSchema),
+});
+
+function extractText(parts: Array<{ type?: string; text?: string }>) {
+  return parts
+    .filter((part) => part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("");
+}
+
+function extractFinnData(parts: Array<{ type?: string; data?: unknown }>) {
+  const finnPart = parts.find((part) => part.type === "data-finn");
+  const parsed = finnDataSchema.safeParse(finnPart?.data);
+  return parsed.success ? parsed.data : null;
+}
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const feedQuery = useFeedQuery();
-  const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
+  const [input, setInput] = useState("");
+  const scrollViewRef = useRef<ScrollView>(null);
 
-  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-  const suggestedQuestions =
-    lastMessage?.suggestions?.length ? lastMessage.suggestions : (feedQuery.data?.suggestedQuestions ?? []);
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: `${env.EXPO_PUBLIC_SERVER_URL}/api/chat`,
+        fetch: expoFetch as unknown as typeof globalThis.fetch,
+      }),
+    [],
+  );
 
-  function buildHistory(msgs: ChatMessage[]) {
-    return msgs
-      .filter((m) => !m.isStreaming && m.content.trim().length > 0)
-      .map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-  }
-
-  async function sendQuestion(question: string) {
-    const trimmed = question.trim();
-    if (trimmed.length < 4 || isStreaming) return;
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      role: "user",
-      content: trimmed,
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setDraft("");
-    setIsStreaming(true);
-
-    const assistantMessageId = (Date.now() + 1).toString();
-    setMessages((prev) => [
-      ...prev,
-      { id: assistantMessageId, role: "assistant", content: "", isStreaming: true },
-    ]);
-
-    try {
-      const cookie = authClient.getCookie();
-      const url = `${env.EXPO_PUBLIC_SERVER_URL}/api/ask/stream`;
-
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", url);
-      xhr.setRequestHeader("Content-Type", "application/json");
-      if (cookie) {
-        xhr.setRequestHeader("cookie", cookie);
-      }
-
-      let lastLength = 0;
-
-      xhr.onreadystatechange = () => {
-        // readyState 3 is "LOADING", which means we have partial data
-        if (xhr.readyState === 3 || xhr.readyState === 4) {
-          const currentText = xhr.responseText;
-          if (currentText.length > lastLength) {
-            processContent(currentText, assistantMessageId);
-            lastLength = currentText.length;
-          }
-        }
-
-        if (xhr.readyState === 4) {
-          setIsStreaming(false);
-          if (xhr.status !== 200) {
-            console.error("XHR failed", xhr.status, xhr.responseText);
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, content: "Sorry, I encountered an error. Please try again.", isStreaming: false }
-                  : msg,
-              ),
-            );
-          }
-        }
-      };
-
-      xhr.onerror = () => {
-        setIsStreaming(false);
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantMessageId
-              ? { ...msg, content: "Network error. Please check your connection.", isStreaming: false }
-              : msg,
-          ),
-        );
-      };
-
-      xhr.send(JSON.stringify({
-        question: trimmed,
-        history: buildHistory(messages),
-      }));
-
-    } catch (error) {
-      console.error("Setup error:", error);
-      setIsStreaming(false);
-    }
-    }
-  function processContent(fullContent: string, assistantMessageId: string) {
-    if (fullContent.includes("__FINN_DATA__")) {
-      const [text, dataStr] = fullContent.split("__FINN_DATA__");
-      try {
-        const data = JSON.parse(dataStr);
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantMessageId
-              ? {
-                  ...msg,
-                  content: text.trim(),
-                  bullets: data.bullets,
-                  suggestions: data.suggestions,
-                  supportingSignals: data.supportingSignals,
-                  isStreaming: false,
-                }
-              : msg,
-          ),
-        );
-      } catch (e) {
-        // Partial data, keep streaming text
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantMessageId ? { ...msg, content: text.trim() } : msg,
-          ),
-        );
-      }
-    } else {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantMessageId ? { ...msg, content: fullContent } : msg,
-        ),
-      );
-    }
-  }
+  const { messages, error, sendMessage, status } = useChat({
+    transport,
+    dataPartSchemas: {
+      finn: finnDataSchema,
+    },
+    experimental_throttle: 50,
+    onError: (streamError) => {
+      console.error(streamError, "Finn chat error");
+    },
+  });
 
   useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+    scrollViewRef.current?.scrollToEnd({ animated: true });
+  }, [messages, status]);
+
+  const isStreaming = status === "submitted" || status === "streaming";
+  const lastAssistantData =
+    ([...messages].reverse().find((message) => message.role === "assistant")?.parts ?? []) as Array<{
+      type?: string;
+      data?: unknown;
+    }>;
+  const latestFinnData = extractFinnData(lastAssistantData);
+  const suggestedQuestions =
+    latestFinnData?.suggestions?.length ? latestFinnData.suggestions : (feedQuery.data?.suggestedQuestions ?? []);
+
+  async function onSubmit(question: string) {
+    const trimmed = question.trim();
+    if (trimmed.length < 4 || isStreaming) {
+      return;
     }
-  }, [messages, isStreaming]);
 
-  const renderMessage = ({ item }: { item: ChatMessage }) => {
-    const isUser = item.role === "user";
-    return (
-      <View style={[styles.messageWrapper, isUser ? styles.userWrapper : styles.assistantWrapper]}>
-        {!isUser && (
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>F</Text>
-          </View>
-        )}
-        <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-          <Text style={[styles.messageText, isUser ? styles.userText : styles.assistantText]}>
-            {item.content}
-            {item.isStreaming && <Text style={styles.cursor}>|</Text>}
-          </Text>
+    const cookie = authClient.getCookie();
+    setInput("");
 
-          {item.bullets && item.bullets.length > 0 && (
-            <View style={styles.bulletsContainer}>
-              {item.bullets.map((bullet, idx) => (
-                <View key={idx} style={styles.bulletRow}>
-                  <Text style={styles.bulletDot}>•</Text>
-                  <Text style={styles.bulletText}>{bullet}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {item.supportingSignals && item.supportingSignals.length > 0 && (
-            <View style={styles.signalsContainer}>
-              {item.supportingSignals.map((signal) => (
-                <View key={signal.key} style={styles.signalCard}>
-                  <Text style={styles.signalTitle}>{signal.title}</Text>
-                  <Text style={styles.signalBody}>{signal.summary}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      </View>
+    await sendMessage(
+      { text: trimmed },
+      {
+        headers: cookie ? { cookie } : undefined,
+      },
     );
-  };
+  }
 
   return (
     <Container>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.flex}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Ask Finn</Text>
           <Text style={styles.headerSubtitle}>Personal Finance Analyst</Text>
         </View>
 
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={[
-            styles.listContent,
-            { paddingBottom: messages.length === 0 ? 0 : 20 },
-          ]}
-          ListEmptyComponent={
+        {error ? (
+          <View style={styles.errorCard}>
+            <Text style={styles.errorTitle}>Chat unavailable</Text>
+            <Text style={styles.errorBody}>{error.message}</Text>
+          </View>
+        ) : null}
+
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {messages.length === 0 ? (
             <View style={styles.emptyContainer}>
               <View style={styles.emptyIcon}>
                 <Ionicons name="chatbubbles-outline" size={40} color="#333" />
               </View>
               <Text style={styles.emptyTitle}>How can I help you today?</Text>
               <View style={styles.suggestions}>
-                {suggestedQuestions.map((q) => (
-                  <Pressable key={q} style={styles.suggestionItem} onPress={() => sendQuestion(q)}>
-                    <Text style={styles.suggestionText}>{q}</Text>
+                {suggestedQuestions.map((question) => (
+                  <Pressable
+                    key={question}
+                    style={styles.suggestionItem}
+                    onPress={() => void onSubmit(question)}
+                  >
+                    <Text style={styles.suggestionText}>{question}</Text>
                     <Ionicons name="arrow-forward" size={14} color="#666" />
                   </Pressable>
                 ))}
               </View>
             </View>
-          }
-        />
+          ) : (
+            <View style={styles.messagesList}>
+              {messages.map((message, index) => {
+                const isUser = message.role === "user";
+                const parts = message.parts as Array<{ type?: string; text?: string; data?: unknown }>;
+                const text = extractText(parts);
+                const finnData = extractFinnData(parts);
+                const isLatestAssistant = !isUser && index === messages.length - 1 && isStreaming;
+                const showStructuredData = !isUser && !isLatestAssistant && Boolean(finnData);
+
+                return (
+                  <View
+                    key={message.id}
+                    style={[
+                      styles.messageWrapper,
+                      isUser ? styles.userWrapper : styles.assistantWrapper,
+                    ]}
+                  >
+                    {!isUser ? (
+                      <View style={styles.avatar}>
+                        <Text style={styles.avatarText}>F</Text>
+                      </View>
+                    ) : null}
+
+                    <View
+                      style={[
+                        styles.messageBubble,
+                        isUser ? styles.userBubble : styles.assistantBubble,
+                      ]}
+                    >
+                      {text ? (
+                        <Text style={[styles.messageText, isUser ? styles.userText : styles.assistantText]}>
+                          {text}
+                          {isLatestAssistant ? <Text style={styles.cursor}>|</Text> : null}
+                        </Text>
+                      ) : null}
+
+                      {showStructuredData && finnData?.bullets?.length ? (
+                        <View style={styles.bulletsContainer}>
+                          {finnData.bullets.map((bullet) => (
+                            <View key={bullet} style={styles.bulletRow}>
+                              <Text style={styles.bulletDot}>•</Text>
+                              <Text style={styles.bulletText}>{bullet}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+
+                      {showStructuredData && finnData?.supportingSignals?.length ? (
+                        <View style={styles.signalsContainer}>
+                          {finnData.supportingSignals.map((signal) => (
+                            <View key={signal.key} style={styles.signalCard}>
+                              <Text style={styles.signalTitle}>{signal.title}</Text>
+                              <Text style={styles.signalBody}>{signal.summary}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+
+        {!!messages.length && suggestedQuestions.length ? (
+          <View style={styles.followupsBar}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.followups}
+            >
+              {suggestedQuestions.map((question) => (
+                <Pressable
+                  key={question}
+                  style={styles.followupChip}
+                  onPress={() => void onSubmit(question)}
+                  disabled={isStreaming}
+                >
+                  <Text style={styles.followupText} numberOfLines={1}>
+                    {question}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
         <View style={[styles.inputContainer, { marginBottom: Math.max(insets.bottom, 16) }]}>
           <View style={styles.inputWrapper}>
@@ -270,15 +244,19 @@ export default function ChatScreen() {
               style={styles.input}
               placeholder="Ask anything..."
               placeholderTextColor="#666"
-              value={draft}
-              onChangeText={setDraft}
+              value={input}
+              onChangeText={setInput}
               multiline
               maxLength={500}
+              onSubmitEditing={(event) => {
+                event.preventDefault();
+                void onSubmit(input);
+              }}
             />
             <Pressable
-              style={[styles.sendButton, (!draft.trim() || isStreaming) && styles.sendButtonDisabled]}
-              onPress={() => sendQuestion(draft)}
-              disabled={!draft.trim() || isStreaming}
+              style={[styles.sendButton, (!input.trim() || isStreaming) && styles.sendButtonDisabled]}
+              onPress={() => void onSubmit(input)}
+              disabled={!input.trim() || isStreaming}
             >
               {isStreaming ? (
                 <ActivityIndicator size="small" color="#000" />
@@ -314,13 +292,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  scrollView: {
+    flex: 1,
+  },
   listContent: {
     paddingHorizontal: 16,
     paddingTop: 20,
+    paddingBottom: 20,
+  },
+  messagesList: {
+    gap: 20,
   },
   messageWrapper: {
     flexDirection: "row",
-    marginBottom: 20,
     maxWidth: "85%",
   },
   userWrapper: {
@@ -413,6 +397,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
   },
+  followupsBar: {
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  followups: {
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingRight: 16,
+  },
+  followupChip: {
+    alignSelf: "flex-start",
+    maxWidth: 220,
+    minHeight: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#222",
+    backgroundColor: "#0d0d0d",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    justifyContent: "center",
+  },
+  followupText: {
+    color: "#aaa",
+    fontSize: 13,
+    lineHeight: 16,
+  },
   inputContainer: {
     paddingHorizontal: 16,
     paddingTop: 8,
@@ -493,5 +503,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     flex: 1,
     marginRight: 10,
+  },
+  errorCard: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#402020",
+    backgroundColor: "#180909",
+    padding: 14,
+  },
+  errorTitle: {
+    color: "#f4b8b8",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  errorBody: {
+    color: "#d39c9c",
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 6,
   },
 });

@@ -24,6 +24,10 @@ type GeminiResponse = {
   }>;
 };
 
+export function buildFinnSystemPrompt() {
+  return "You are Finn, a personal finance analyst. Answer only from the supplied analytics, chat history, and transactions. Be specific, concise, and avoid making claims not supported by the data. If the data is insufficient, say so plainly. Use INR formatting where relevant. Do not mention being an AI model. Keep answers crisp and decision-useful.";
+}
+
 function formatCurrency(amountMinor: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -59,6 +63,51 @@ function extractContent(payload: GeminiResponse) {
     .trim();
 }
 
+export function buildFinnPromptPayload(args: AskFinnLlmArgs) {
+  return {
+    task: "Answer the user's money question in plain language.",
+    answer_shape: {
+      instructions: [
+        "Return exactly JSON.",
+        "Keys: answer, bullets, suggestions, supportingSignalTitles.",
+        "answer must be a short paragraph, under 90 words.",
+        "bullets must be an array of 1 to 3 sharp factual points grounded in the supplied data.",
+        "suggestions must be an array of 3 short follow-up questions.",
+        "supportingSignalTitles must be an array of titles taken from the provided signals only.",
+        "Do not hedge unnecessarily. Do not fabricate numbers or causes. If evidence is thin, say what is missing.",
+      ],
+    },
+    conversationHistory: args.history.slice(-8),
+    question: args.question,
+    analytics: {
+      persona: args.snapshot.persona,
+      metrics: args.snapshot.metrics,
+      behavioralSignals: summarizeSignals(args.snapshot.behavioralSignals),
+      projections: args.snapshot.projections.map((entry) => ({
+        category: entry.category,
+        projectedAmount: formatCurrency(entry.projectedAmountMinor),
+        baselineAmount: formatCurrency(entry.baselineAmountMinor),
+        deltaAmount: formatCurrency(entry.deltaMinor),
+      })),
+      recurringCharges: args.snapshot.recurringCharges.map((entry) => ({
+        merchant: entry.merchantName,
+        category: entry.category,
+        amount: formatCurrency(entry.amountMinor),
+        cadenceDays: entry.cadenceDays,
+        lastChargedAt: entry.lastChargedAt,
+      })),
+      unusualSilence: args.snapshot.unusualSilence,
+      emotionalSpendingFingerprint: args.snapshot.emotionalSpendingFingerprint,
+      endOfMonthCrunch: args.snapshot.endOfMonthCrunch,
+      guiltIndex: args.snapshot.guiltIndex,
+    },
+    recentTransactions: {
+      currentWindow: summarizeExpenses(args.currentExpenses),
+      previousWindow: summarizeExpenses(args.previousExpenses),
+    },
+  };
+}
+
 export async function askFinnWithGemini(args: AskFinnLlmArgs): Promise<string | null> {
   if (!env.GEMINI_API_KEY) {
     return null;
@@ -76,7 +125,7 @@ export async function askFinnWithGemini(args: AskFinnLlmArgs): Promise<string | 
         system_instruction: {
           parts: [
             {
-              text: "You are Finn, a personal finance analyst. Answer only from the supplied analytics, chat history, and transactions. Be specific, concise, and avoid making claims not supported by the data. If the data is insufficient, say so plainly. Use INR formatting where relevant. Do not mention being an AI model. Keep answers crisp and decision-useful.",
+              text: buildFinnSystemPrompt(),
             },
           ],
         },
@@ -85,48 +134,7 @@ export async function askFinnWithGemini(args: AskFinnLlmArgs): Promise<string | 
             role: "user",
             parts: [
               {
-                text: JSON.stringify({
-                  task: "Answer the user's money question in plain language.",
-                  answer_shape: {
-                    instructions: [
-                      "Return exactly JSON.",
-                      "Keys: answer, bullets, suggestions, supportingSignalTitles.",
-                      "answer must be a short paragraph, under 90 words.",
-                      "bullets must be an array of 1 to 3 sharp factual points grounded in the supplied data.",
-                      "suggestions must be an array of 3 short follow-up questions.",
-                      "supportingSignalTitles must be an array of titles taken from the provided signals only.",
-                      "Do not hedge unnecessarily. Do not fabricate numbers or causes. If evidence is thin, say what is missing.",
-                    ],
-                  },
-                  conversationHistory: args.history.slice(-8),
-                  question: args.question,
-                  analytics: {
-                    persona: args.snapshot.persona,
-                    metrics: args.snapshot.metrics,
-                    behavioralSignals: summarizeSignals(args.snapshot.behavioralSignals),
-                    projections: args.snapshot.projections.map((entry) => ({
-                      category: entry.category,
-                      projectedAmount: formatCurrency(entry.projectedAmountMinor),
-                      baselineAmount: formatCurrency(entry.baselineAmountMinor),
-                      deltaAmount: formatCurrency(entry.deltaMinor),
-                    })),
-                    recurringCharges: args.snapshot.recurringCharges.map((entry) => ({
-                      merchant: entry.merchantName,
-                      category: entry.category,
-                      amount: formatCurrency(entry.amountMinor),
-                      cadenceDays: entry.cadenceDays,
-                      lastChargedAt: entry.lastChargedAt,
-                    })),
-                    unusualSilence: args.snapshot.unusualSilence,
-                    emotionalSpendingFingerprint: args.snapshot.emotionalSpendingFingerprint,
-                    endOfMonthCrunch: args.snapshot.endOfMonthCrunch,
-                    guiltIndex: args.snapshot.guiltIndex,
-                  },
-                  recentTransactions: {
-                    currentWindow: summarizeExpenses(args.currentExpenses),
-                    previousWindow: summarizeExpenses(args.previousExpenses),
-                  },
-                }),
+                text: JSON.stringify(buildFinnPromptPayload(args)),
               },
             ],
           },

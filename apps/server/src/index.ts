@@ -1,14 +1,26 @@
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { auth } from "@finn/auth";
 import { expenseCategories } from "@finn/db";
 import { env } from "@finn/env/server";
+import {
+  consumeStream,
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  streamText,
+} from "ai";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import { z } from "zod";
 
+import { answerMoneyQuestion } from "@/lib/analytics";
+import { requireSession } from "@/lib/auth";
 import {
   askMoneyQuestion,
+  buildAskMoneyContext,
+  buildAskMoneyData,
   createExpenseForUser,
   deleteExpenseForUser,
   getAnalytics,
@@ -17,13 +29,16 @@ import {
   listExpenses,
   listExpensesForRange,
   listReports,
-  streamAskMoneyQuestion,
 } from "@/lib/finn";
-import { requireSession } from "@/lib/auth";
-import { stream } from "hono/streaming";
+import { buildFinnPromptPayload, buildFinnSystemPrompt } from "@/lib/gemini";
 
 const app = new Hono();
 const api = new Hono();
+
+const google = createGoogleGenerativeAI({
+  apiKey: env.GEMINI_API_KEY,
+  baseURL: env.GEMINI_BASE_URL,
+});
 
 app.use(logger());
 app.use(
@@ -60,6 +75,80 @@ const askMoneySchema = z.object({
 });
 
 const analyticsPeriodSchema = z.enum(["weekly", "monthly"]).default("weekly");
+
+const chatSchema = z.object({
+  messages: z.array(z.any()).default([]),
+});
+
+function extractMessageText(message: unknown) {
+  if (!message || typeof message !== "object") {
+    return "";
+  }
+
+  const parts = "parts" in message && Array.isArray(message.parts) ? message.parts : [];
+
+  return parts
+    .map((part) => {
+      if (!part || typeof part !== "object" || !("type" in part)) {
+        return "";
+      }
+
+      if (part.type === "text" && "text" in part && typeof part.text === "string") {
+        return part.text;
+      }
+
+      return "";
+    })
+    .join("")
+    .trim();
+}
+
+function buildConversationHistory(messages: unknown[]) {
+  return messages
+    .map((message) => {
+      if (!message || typeof message !== "object" || !("role" in message)) {
+        return null;
+      }
+
+      const role = message.role;
+      if (role !== "user" && role !== "assistant") {
+        return null;
+      }
+
+      const content = extractMessageText(message);
+      if (!content) {
+        return null;
+      }
+
+      return { role, content };
+    })
+    .filter((entry): entry is { role: "user" | "assistant"; content: string } => entry !== null);
+}
+
+function sanitizeMessagesForModel(messages: unknown[]) {
+  return messages
+    .map((message) => {
+      if (!message || typeof message !== "object" || !("role" in message)) {
+        return null;
+      }
+
+      const role = message.role;
+      if (role !== "user" && role !== "assistant" && role !== "system") {
+        return null;
+      }
+
+      const content = extractMessageText(message);
+      if (!content) {
+        return null;
+      }
+
+      return {
+        role,
+        parts: [{ type: "text" as const, text: content }],
+      };
+    })
+    .filter((entry): entry is { role: "system" | "user" | "assistant"; parts: [{ type: "text"; text: string }] } => entry !== null);
+}
 
 api.get("/feed", async (c) => {
   const session = await requireSession(c);
@@ -155,34 +244,82 @@ api.post("/ask", async (c) => {
   return c.json(answer);
 });
 
-api.post("/ask/stream", async (c) => {
+api.post("/chat", async (c) => {
   const session = await requireSession(c);
-  const payload = askMoneySchema.parse(await c.req.json());
+  const payload = chatSchema.parse(await c.req.json());
+  const uiMessages = payload.messages;
+  const modelMessages = sanitizeMessagesForModel(uiMessages);
+  const history = buildConversationHistory(uiMessages);
+  const lastUserQuestion = [...history].reverse().find((entry) => entry.role === "user")?.content;
 
-  console.log(`[AskStream] Question from ${session.user.id}: ${payload.question}`);
+  if (!lastUserQuestion || lastUserQuestion.trim().length < 4) {
+    throw new HTTPException(400, { message: "A user question is required." });
+  }
 
-  try {
-    const fullResponse = await askMoneyQuestion(session.user.id, payload.question, payload.history);
-    console.log(`[AskStream] Got response, starting stream...`);
+  const { currentExpenses, previousExpenses, snapshot } = await buildAskMoneyContext(session.user.id);
+  const finnData = buildAskMoneyData({
+    question: lastUserQuestion,
+    currentExpenses,
+    previousExpenses,
+    snapshot,
+  });
 
-    c.header("Content-Type", "text/plain; charset=utf-8");
-    c.header("Transfer-Encoding", "chunked");
-
-    return stream(c, async (stream) => {
-      const words = fullResponse.answer.split(" ");
-      for (const word of words) {
-        await stream.write(word + " ");
-        await stream.sleep(10); // Reduced from 20ms to 10ms for better "speed"
-      }
-
-      await stream.write("\n__FINN_DATA__" + JSON.stringify(fullResponse));
-      console.log(`[AskStream] Stream complete.`);
+  if (!env.GEMINI_API_KEY) {
+    const fallback = answerMoneyQuestion({
+      question: lastUserQuestion,
+      currentExpenses,
+      previousExpenses,
+      snapshot,
     });
 
-  } catch (err) {
-    console.error(`[AskStream] Error:`, err);
-    throw new HTTPException(500, { message: "Finn failed to process your request." });
+    return createUIMessageStreamResponse({
+      stream: createUIMessageStream({
+        originalMessages: uiMessages,
+        execute: ({ writer }) => {
+          const textId = crypto.randomUUID();
+          writer.write({ type: "text-start", id: textId });
+          writer.write({ type: "text-delta", id: textId, delta: fallback.answer });
+          writer.write({ type: "text-end", id: textId });
+          writer.write({ type: "data-finn", data: finnData });
+        },
+      }),
+    });
   }
+
+  const result = streamText({
+    model: google(env.GEMINI_MODEL),
+    system: [
+      buildFinnSystemPrompt(),
+      `Finance context:\n${JSON.stringify(
+        buildFinnPromptPayload({
+          question: lastUserQuestion,
+          currentExpenses,
+          previousExpenses,
+          snapshot,
+          history,
+        }),
+      )}`,
+      "Respond with natural-language assistant text only. Do not return JSON.",
+    ].join("\n\n"),
+    messages: await convertToModelMessages(modelMessages),
+    temperature: 0.4,
+  });
+
+  return createUIMessageStreamResponse({
+    stream: createUIMessageStream({
+      originalMessages: uiMessages,
+      async execute({ writer }) {
+        writer.merge(
+          result.toUIMessageStream({
+            onFinish() {
+              writer.write({ type: "data-finn", data: finnData });
+            },
+          }),
+        );
+      },
+    }),
+    consumeSseStream: consumeStream,
+  });
 });
 
 app.route("/api", api);

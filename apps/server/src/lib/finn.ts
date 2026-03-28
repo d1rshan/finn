@@ -4,6 +4,7 @@ import {
   insight,
   report,
   type ExpenseCategory,
+  type InsightSummary,
   type InsightMetadata,
   type ReportPeriodType,
   and,
@@ -17,6 +18,8 @@ import {
 import { db } from "@finn/db";
 import { z } from "zod";
 import {
+  type AnalyticsSnapshot,
+  type ExpenseLike,
   answerMoneyQuestion,
   buildAnalyticsSnapshot,
   buildReportMetadataFromSnapshot,
@@ -592,11 +595,7 @@ function buildAnalyticsSummary(expensesForPeriod: ExpenseRow[]) {
   };
 }
 
-export async function askMoneyQuestion(
-  userId: string,
-  question: string,
-  history: Array<{ role: "user" | "assistant"; content: string }> = [],
-) {
+async function buildAskMoneyContext(userId: string) {
   const expensesForUser = await db
     .select()
     .from(expense)
@@ -623,6 +622,51 @@ export async function askMoneyQuestion(
     now,
   });
 
+  return {
+    currentExpenses,
+    previousExpenses,
+    snapshot,
+  };
+}
+
+export { buildAskMoneyContext };
+
+export function parseAskMoneyLlmResponse(llmContent: string, behavioralSignals: InsightSummary[]) {
+  const parsed = llmAskResponseSchema.parse(JSON.parse(llmContent));
+  const supportingSignals = behavioralSignals.filter((entry) =>
+    parsed.supportingSignalTitles.includes(entry.title),
+  );
+
+  return {
+    answer: parsed.answer,
+    bullets: parsed.bullets,
+    suggestions: parsed.suggestions,
+    supportingSignals,
+  };
+}
+
+export function buildAskMoneyData(args: {
+  question: string;
+  currentExpenses: ExpenseLike[];
+  previousExpenses: ExpenseLike[];
+  snapshot: AnalyticsSnapshot;
+}) {
+  const fallback = answerMoneyQuestion(args);
+
+  return {
+    bullets: fallback.supportingSignals.slice(0, 3).map((entry) => entry.summary),
+    suggestions: fallback.suggestions,
+    supportingSignals: fallback.supportingSignals,
+  };
+}
+
+export async function askMoneyQuestion(
+  userId: string,
+  question: string,
+  history: Array<{ role: "user" | "assistant"; content: string }> = [],
+) {
+  const { currentExpenses, previousExpenses, snapshot } = await buildAskMoneyContext(userId);
+
   try {
     const llmContent = await askFinnWithGemini({
       question,
@@ -633,17 +677,7 @@ export async function askMoneyQuestion(
     });
 
     if (llmContent) {
-      const parsed = llmAskResponseSchema.parse(JSON.parse(llmContent));
-      const supportingSignals = snapshot.behavioralSignals.filter((entry) =>
-        parsed.supportingSignalTitles.includes(entry.title),
-      );
-
-      return {
-        answer: parsed.answer,
-        bullets: parsed.bullets,
-        suggestions: parsed.suggestions,
-        supportingSignals,
-      };
+      return parseAskMoneyLlmResponse(llmContent, snapshot.behavioralSignals);
     }
   } catch (error) {
     console.error("Gemini Ask Finn fallback", error);
@@ -660,48 +694,6 @@ export async function askMoneyQuestion(
     ...fallback,
     bullets: fallback.supportingSignals.slice(0, 3).map((entry) => entry.summary),
   };
-}
-
-export async function streamAskMoneyQuestion(
-  userId: string,
-  question: string,
-  history: Array<{ role: "user" | "assistant"; content: string }> = [],
-) {
-  const expensesForUser = await db
-    .select()
-    .from(expense)
-    .where(eq(expense.userId, userId))
-    .orderBy(desc(expense.occurredAt));
-
-  const now = new Date();
-  const snapshotWindowStart = startOfDay(subtractDays(now, 89));
-  const previousSnapshotWindowStart = startOfDay(subtractDays(now, 179));
-  const currentWindowStart = startOfDay(subtractDays(now, 6));
-  const previousWindowStart = startOfDay(subtractDays(now, 13));
-
-  const currentExpenses = expensesForUser.filter((item) => item.occurredAt >= currentWindowStart);
-  const previousExpenses = expensesForUser.filter(
-    (item) => item.occurredAt >= previousWindowStart && item.occurredAt < currentWindowStart,
-  );
-
-  const snapshot = buildAnalyticsSnapshot({
-    expenses: expensesForUser.filter((item) => item.occurredAt >= snapshotWindowStart),
-    previousExpenses: expensesForUser.filter(
-      (item) =>
-        item.occurredAt >= previousSnapshotWindowStart && item.occurredAt < snapshotWindowStart,
-    ),
-    now,
-  });
-
-  const stream = await streamFinnWithGemini({
-    question,
-    currentExpenses,
-    previousExpenses,
-    snapshot,
-    history,
-  });
-
-  return stream;
 }
 
 export async function getAnalytics(userId: string, period: AnalyticsPeriod) {

@@ -10,10 +10,12 @@
     "start": "node dist/index.mjs"
   },
   "dependencies": {
+    "@ai-sdk/google": "catalog:",
     "@finn/auth": "workspace:*",
     "@finn/db": "workspace:*",
     "@finn/env": "workspace:*",
     "@hono/node-server": "^1.14.4",
+    "ai": "catalog:",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
     "hono": "^4.8.2",
