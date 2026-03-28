@@ -31,6 +31,10 @@ export function formatDateTime(value: Date | string) {
   return dateTimeFormatter.format(new Date(value));
 }
 
+export function formatDate(value: Date | string) {
+  return dateFormatter.format(new Date(value));
+}
+
 export function formatCategory(category: ExpenseCategory) {
   return category.charAt(0).toUpperCase() + category.slice(1);
 }

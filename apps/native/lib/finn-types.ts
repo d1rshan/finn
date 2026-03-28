@@ -120,7 +120,7 @@ export type ReportMetadata = {
   } | null;
 };
 
-export type AnalyticsPeriodType = "weekly" | "monthly";
+export type AnalyticsPeriodType = "daily" | "weekly" | "monthly";
 
 export type AnalyticsCategoryBreakdown = {
   category: ExpenseCategory | "other";
@@ -136,6 +136,8 @@ export type AnalyticsPeriodBucket = {
   periodEnd: string;
   totalSpend: number;
   transactionCount: number;
+  averagePayment: number;
+  dailyAverage: number;
   topCategory: {
     category: ExpenseCategory;
     amountMinor: number;
@@ -145,7 +147,40 @@ export type AnalyticsPeriodBucket = {
     amountMinor: number;
     count: number;
   } | null;
+  categoryTotals: Record<
+    ExpenseCategory,
+    {
+      amountMinor: number;
+      transactionCount: number;
+    }
+  >;
   categoryBreakdown: AnalyticsCategoryBreakdown[];
+};
+
+export type AnalyticsOverview = {
+  totalSpend: number;
+  transactionCount: number;
+  averagePayment: number;
+  activeDays: number;
+  activeMonths: number;
+  firstExpenseAt: string | null;
+  lastExpenseAt: string | null;
+};
+
+export type AnalyticsCategorySummary = {
+  category: ExpenseCategory;
+  totalSpend: number;
+  transactionCount: number;
+  averagePayment: number;
+  share: number;
+  lastExpenseAt: string | null;
+};
+
+export type AnalyticsMerchantSummary = {
+  merchantName: string;
+  amountMinor: number;
+  count: number;
+  lastOccurredAt: string;
 };
 
 export type AnalyticsMemoryPayload = {
