@@ -12,8 +12,6 @@ export const expenseCategories = [
 ] as const;
 
 export type ExpenseCategory = (typeof expenseCategories)[number];
-export type ReportPeriodType = "weekly" | "monthly";
-
 export type ReportMetric = {
   label: string;
   value: number;

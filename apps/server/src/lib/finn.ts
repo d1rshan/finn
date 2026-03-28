@@ -8,11 +8,8 @@ import {
   type InsightMetadata,
   type ReportPeriodType,
   and,
-  asc,
   desc,
   eq,
-  gte,
-  lt,
 } from "@finn/db";
 
 import { db } from "@finn/db";
@@ -379,15 +376,9 @@ export async function syncAnalyticsForUser(userId: string) {
 export async function getExpenseFeed(userId: string) {
   await syncAnalyticsForUser(userId);
 
-  const [insightsForUser, recentExpenses, reportsForUser, expensesForUser] = await Promise.all([
+  const [insightsForUser, recentExpenses, expensesForUser] = await Promise.all([
     db.select().from(insight).where(eq(insight.userId, userId)).orderBy(desc(insight.createdAt)).limit(8),
     db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)).limit(8),
-    db
-      .select()
-      .from(report)
-      .where(eq(report.userId, userId))
-      .orderBy(desc(report.periodStart))
-      .limit(4),
     db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)).limit(90),
   ]);
 
@@ -403,18 +394,9 @@ export async function getExpenseFeed(userId: string) {
     now,
   });
 
-  const reportPrompts = reportsForUser.map((entry) => ({
-    id: entry.id,
-    periodType: entry.periodType,
-    title: entry.title,
-    summary: entry.summary,
-    createdAt: entry.createdAt,
-  }));
-
   return {
     insights: insightsForUser,
     recentExpenses,
-    reportPrompts,
     snapshot: feedSnapshot,
     suggestedQuestions: [
       "Why did I spend more last week?",
@@ -471,45 +453,6 @@ export async function deleteExpenseForUser(userId: string, expenseId: string) {
   }
 
   return deletedExpense;
-}
-
-export async function listReports(userId: string) {
-  await syncAnalyticsForUser(userId);
-
-  return db
-    .select()
-    .from(report)
-    .where(eq(report.userId, userId))
-    .orderBy(desc(report.periodStart), asc(report.periodType));
-}
-
-export async function getReportDetail(userId: string, reportId: string) {
-  await syncAnalyticsForUser(userId);
-
-  const [selectedReport] = await db
-    .select()
-    .from(report)
-    .where(and(eq(report.id, reportId), eq(report.userId, userId)));
-
-  return selectedReport ?? null;
-}
-
-export async function listExpensesForRange(args: {
-  userId: string;
-  periodStart: Date;
-  periodEnd: Date;
-}) {
-  return db
-    .select()
-    .from(expense)
-    .where(
-      and(
-        eq(expense.userId, args.userId),
-        gte(expense.occurredAt, args.periodStart),
-        lt(expense.occurredAt, args.periodEnd),
-      ),
-    )
-    .orderBy(desc(expense.occurredAt));
 }
 
 function buildAnalyticsLabel(period: AnalyticsPeriod, periodStart: Date) {

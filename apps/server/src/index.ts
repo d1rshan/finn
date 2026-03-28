@@ -24,10 +24,7 @@ import {
   deleteExpenseForUser,
   getAnalytics,
   getExpenseFeed,
-  getReportDetail,
   listExpenses,
-  listExpensesForRange,
-  listReports,
 } from "@/lib/finn";
 import { buildFinnChatContext, buildFinnSystemPrompt } from "@/lib/gemini";
 
@@ -196,43 +193,12 @@ api.delete("/expenses/:expenseId", async (c) => {
   });
 });
 
-api.get("/reports", async (c) => {
-  const session = await requireSession(c);
-  const payload = await listReports(session.user.id);
-
-  return c.json({
-    reports: payload,
-  });
-});
-
 api.get("/analytics", async (c) => {
   const session = await requireSession(c);
   const period = analyticsPeriodSchema.parse(c.req.query("period"));
   const payload = await getAnalytics(session.user.id, period);
 
   return c.json(payload);
-});
-
-api.get("/reports/:reportId", async (c) => {
-  const session = await requireSession(c);
-  const selectedReport = await getReportDetail(session.user.id, c.req.param("reportId"));
-
-  if (!selectedReport) {
-    throw new HTTPException(404, {
-      message: "Report not found",
-    });
-  }
-
-  const expensesForReport = await listExpensesForRange({
-    userId: session.user.id,
-    periodStart: selectedReport.periodStart,
-    periodEnd: selectedReport.periodEnd,
-  });
-
-  return c.json({
-    report: selectedReport,
-    expenses: expensesForReport,
-  });
 });
 
 api.post("/ask", async (c) => {

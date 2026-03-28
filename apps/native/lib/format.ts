@@ -1,9 +1,4 @@
-import type {
-  AnalyticsCategoryBreakdown,
-  ExpenseCategory,
-  ReportMetric,
-  ReportPeriodType,
-} from "@/lib/finn-types";
+import type { AnalyticsCategoryBreakdown, ExpenseCategory } from "@/lib/finn-types";
 
 const currencyFormatter = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -33,23 +28,6 @@ export function formatDateTime(value: Date | string) {
 
 export function formatCategory(category: ExpenseCategory) {
   return category.charAt(0).toUpperCase() + category.slice(1);
-}
-
-export function formatPeriodType(periodType: ReportPeriodType) {
-  return periodType === "weekly" ? "Weekly report" : "Monthly report";
-}
-
-export function formatMetricValue(metric: ReportMetric) {
-  if (metric.label === "Transactions") {
-    return `${metric.value}`;
-  }
-
-  if (metric.change === null || metric.change === undefined) {
-    return formatCurrency(metric.value);
-  }
-
-  const changePrefix = metric.change > 0 ? "+" : "";
-  return `${formatCurrency(metric.value)} (${changePrefix}${metric.change}%)`;
 }
 
 export function formatAnalyticsCategory(category: AnalyticsCategoryBreakdown["category"]) {

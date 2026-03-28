@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Link, type Href } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Container } from "@/components/container";
@@ -8,11 +8,53 @@ import { authClient } from "@/lib/auth-client";
 import { formatCategory, formatCurrency, formatDateTime } from "@/lib/format";
 import { useFeedQuery } from "@/lib/finn-api";
 
+function severityTone(severity: "low" | "medium" | "high") {
+  if (severity === "high") {
+    return {
+      border: "#3a2828",
+      background: "#171010",
+      badgeBackground: "#241515",
+      badgeText: "#f1b6b6",
+    };
+  }
+
+  if (severity === "medium") {
+    return {
+      border: "#2f3022",
+      background: "#14140f",
+      badgeBackground: "#1f2015",
+      badgeText: "#d8d79c",
+    };
+  }
+
+  return {
+    border: "#1b2b26",
+    background: "#0e1513",
+    badgeBackground: "#13201c",
+    badgeText: "#9ecfbc",
+  };
+}
+
 export default function HomeScreen() {
   const feedQuery = useFeedQuery();
   const session = authClient.useSession();
-  const snapshot = feedQuery.data?.snapshot;
   const [isAccountSheetOpen, setIsAccountSheetOpen] = useState(false);
+
+  const primaryInsight = feedQuery.data?.insights?.[0] ?? null;
+  const secondaryInsights = useMemo(
+    () => (feedQuery.data?.insights ?? []).slice(1, 3),
+    [feedQuery.data?.insights],
+  );
+  const signalRows = useMemo(
+    () =>
+      (feedQuery.data?.snapshot.behavioralSignals ?? [])
+        .filter((entry) => entry.title !== primaryInsight?.title)
+        .slice(0, 3),
+    [feedQuery.data?.snapshot.behavioralSignals, primaryInsight?.title],
+  );
+  const recentExpenses = feedQuery.data?.recentExpenses ?? [];
+  const hasActivity = Boolean(primaryInsight || secondaryInsights.length || signalRows.length || recentExpenses.length);
+  const tone = severityTone(primaryInsight?.severity ?? "low");
 
   return (
     <Container>
@@ -29,7 +71,10 @@ export default function HomeScreen() {
         <View style={styles.headerRow}>
           <View style={styles.headerText}>
             <Text style={styles.eyebrow}>FINN</Text>
-            <Text style={styles.title}>Quietly watching what your money is doing.</Text>
+            <Text style={styles.title}>Your money, reduced to what matters right now.</Text>
+            <Text style={styles.subtitle}>
+              Review the strongest signal, scan recent movement, then decide what to do next.
+            </Text>
           </View>
 
           <Pressable
@@ -44,131 +89,138 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.heroCard}>
-          <Text style={styles.heroTitle}>Inbox</Text>
-          <Text style={styles.heroText}>
-            Every expense sharpens Finn’s memory. The feed below is where it reaches out when a
-            pattern starts to matter.
-          </Text>
+        <View style={styles.quickActions}>
+          <Link href={"/(app)/(tabs)/chat" as Href} asChild>
+            <Pressable style={[styles.quickAction, styles.quickActionPrimary]}>
+              <Ionicons name="chatbubble-ellipses-outline" size={16} color="#050505" />
+              <Text style={styles.quickActionPrimaryText}>Ask Finn</Text>
+            </Pressable>
+          </Link>
+
+          <Link href={"/(app)/(tabs)/log" as Href} asChild>
+            <Pressable style={styles.quickAction}>
+              <Ionicons name="add-circle-outline" size={16} color="#d9d9d9" />
+              <Text style={styles.quickActionText}>Log payment</Text>
+            </Pressable>
+          </Link>
         </View>
 
-        {snapshot?.persona ? (
-          <View style={styles.personaCard}>
-            <Text style={styles.personaEyebrow}>Behavioral persona</Text>
-            <Text style={styles.personaTitle}>{snapshot.persona.label}</Text>
-            <Text style={styles.personaText}>{snapshot.persona.summary}</Text>
-            {snapshot.emotionalSpendingFingerprint ? (
-              <Text style={styles.personaFootnote}>{snapshot.emotionalSpendingFingerprint}</Text>
-            ) : null}
-          </View>
-        ) : null}
-
-        {feedQuery.data?.insights?.length ? (
-          <View style={styles.stack}>
-            {feedQuery.data.insights.map((entry, index) => (
+        {hasActivity ? (
+          <>
+            {primaryInsight ? (
               <View
-                key={entry.id}
-                style={[styles.messageCard, index === 0 ? styles.messagePrimary : null]}
+                style={[
+                  styles.primaryCard,
+                  {
+                    borderColor: tone.border,
+                    backgroundColor: tone.background,
+                  },
+                ]}
               >
-                <View style={styles.messageMeta}>
-                  <Text style={styles.messageSender}>Finn</Text>
-                  <Text style={styles.messageDate}>{formatDateTime(entry.createdAt)}</Text>
+                <View style={styles.primaryMeta}>
+                  <View
+                    style={[
+                      styles.severityBadge,
+                      {
+                        backgroundColor: tone.badgeBackground,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.severityText, { color: tone.badgeText }]}>
+                      {primaryInsight.severity} priority
+                    </Text>
+                  </View>
+                  <Text style={styles.primaryDate}>{formatDateTime(primaryInsight.createdAt)}</Text>
                 </View>
-                <Text style={[styles.messageTitle, index === 0 ? styles.messageTitlePrimary : null]}>
-                  {entry.title}
-                </Text>
-                <Text style={[styles.messageBody, index === 0 ? styles.messageBodyPrimary : null]}>
-                  {entry.body}
-                </Text>
+
+                <Text style={styles.primaryTitle}>{primaryInsight.title}</Text>
+                <Text style={styles.primaryBody}>{primaryInsight.body}</Text>
               </View>
-            ))}
-          </View>
+            ) : null}
+
+            {secondaryInsights.length ? (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Worth watching</Text>
+                </View>
+
+                <View style={styles.stack}>
+                  {secondaryInsights.map((entry) => (
+                    <View key={entry.id} style={styles.insightRow}>
+                      <View style={styles.insightIcon}>
+                        <Ionicons name="sparkles-outline" size={16} color="#d9d9d9" />
+                      </View>
+                      <View style={styles.insightCopy}>
+                        <Text style={styles.insightTitle}>{entry.title}</Text>
+                        <Text style={styles.insightBody}>{entry.body}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {signalRows.length ? (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Signals</Text>
+                </View>
+
+                <View style={styles.listCard}>
+                  {signalRows.map((entry, index) => (
+                    <View
+                      key={entry.key}
+                      style={[styles.signalRow, index === signalRows.length - 1 ? styles.signalRowLast : null]}
+                    >
+                      <Text style={styles.signalTitle}>{entry.title}</Text>
+                      <Text style={styles.signalText}>{entry.summary}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Recent payments</Text>
+                <Link href={"/(app)/(tabs)/log" as Href} style={styles.sectionLink}>
+                  Add one
+                </Link>
+              </View>
+
+              <View style={styles.listCard}>
+                {recentExpenses.length ? (
+                  recentExpenses.slice(0, 6).map((entry, index) => (
+                    <View key={entry.id} style={[styles.row, index === recentExpenses.length - 1 ? styles.rowLast : null]}>
+                      <View style={styles.rowCopy}>
+                        <Text style={styles.rowTitle}>{entry.merchantName}</Text>
+                        <Text style={styles.rowMeta}>
+                          {formatCategory(entry.category)} · {formatDateTime(entry.occurredAt)}
+                        </Text>
+                      </View>
+                      <Text style={styles.rowAmount}>{formatCurrency(entry.amountMinor)}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.placeholder}>No payments logged yet.</Text>
+                )}
+              </View>
+            </View>
+          </>
         ) : (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No messages yet.</Text>
+            <Text style={styles.emptyTitle}>Nothing useful to say yet.</Text>
             <Text style={styles.emptyText}>
-              Log your first few payments and Finn will start spotting habits, spikes, and repeat
-              merchants.
+              Add a few payments first. Finn only becomes sharp once there is enough real activity to read.
             </Text>
+
+            <Link href={"/(app)/(tabs)/log" as Href} asChild>
+              <Pressable style={styles.emptyAction}>
+                <Text style={styles.emptyActionText}>Log your first payment</Text>
+              </Pressable>
+            </Link>
           </View>
         )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent payments</Text>
-          <Link href={"/(app)/(tabs)/log" as Href} style={styles.sectionLink}>
-            Add one
-          </Link>
-        </View>
-
-        {snapshot?.behavioralSignals?.length ? (
-          <View style={styles.signalCard}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Behavioral signals</Text>
-            </View>
-            {snapshot.behavioralSignals.slice(0, 3).map((entry) => (
-              <View key={entry.key} style={styles.signalRow}>
-                <Text style={styles.signalTitle}>{entry.title}</Text>
-                <Text style={styles.signalText}>{entry.summary}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
-        <View style={styles.listCard}>
-          {feedQuery.data?.recentExpenses?.length ? (
-            feedQuery.data.recentExpenses.map((entry) => (
-              <View key={entry.id} style={styles.row}>
-                <View style={styles.rowCopy}>
-                  <Text style={styles.rowTitle}>{entry.merchantName}</Text>
-                  <Text style={styles.rowMeta}>
-                    {formatCategory(entry.category)} · {formatDateTime(entry.occurredAt)}
-                  </Text>
-                </View>
-                <Text style={styles.rowAmount}>{formatCurrency(entry.amountMinor)}</Text>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.placeholder}>Nothing logged yet.</Text>
-          )}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Report prompts</Text>
-          <Link href={"/(app)/(tabs)/reports" as Href} style={styles.sectionLink}>
-            See all
-          </Link>
-        </View>
-
-        <View style={styles.stack}>
-          {feedQuery.data?.reportPrompts?.length ? (
-            feedQuery.data.reportPrompts.map((entry) => (
-              <Link
-                href={`/(app)/reports/${entry.id}` as Href}
-                key={entry.id}
-                style={styles.reportCard}
-              >
-                <View style={styles.reportHead}>
-                  <View style={styles.reportMeta}>
-                    <Text style={styles.reportBadge}>{entry.periodType.toUpperCase()}</Text>
-                    <Text style={styles.reportDate}>{formatDateTime(entry.createdAt)}</Text>
-                  </View>
-                  <Ionicons name="arrow-forward" size={18} color="#6d6d6d" />
-                </View>
-                <View style={styles.reportBody}>
-                  <Text style={styles.reportTitle}>{entry.title}</Text>
-                  <Text style={styles.reportSummary}>{entry.summary}</Text>
-                </View>
-              </Link>
-            ))
-          ) : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>Reports will appear here.</Text>
-              <Text style={styles.emptyText}>
-                Weekly and monthly summaries unlock automatically as you log activity.
-              </Text>
-            </View>
-          )}
-        </View>
       </ScrollView>
 
       <Modal
@@ -190,15 +242,17 @@ export default function HomeScreen() {
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetEyebrow}>Account</Text>
-            <Text style={styles.sheetTitle}>{session.data?.user?.name ?? "Finn user"}</Text>
-            <Text style={styles.sheetEmail}>{session.data?.user?.email ?? "No email found"}</Text>
+            <View style={styles.sheetProfile}>
+              <View style={styles.sheetAvatar}>
+                <Text style={styles.sheetAvatarLabel}>
+                  {(session.data?.user?.name ?? session.data?.user?.email ?? "F").charAt(0).toUpperCase()}
+                </Text>
+              </View>
 
-            <View style={styles.sheetCard}>
-              <Text style={styles.sheetCardLabel}>Authentication</Text>
-              <Text style={styles.sheetCardText}>
-                You are signed in with Better Auth. This sheet is the home for session controls in
-                v1.
-              </Text>
+              <View style={styles.sheetProfileBody}>
+                <Text style={styles.sheetTitle}>{session.data?.user?.name ?? "Finn user"}</Text>
+                <Text style={styles.sheetEmail}>{session.data?.user?.email ?? "No email found"}</Text>
+              </View>
             </View>
 
             <Pressable
@@ -222,7 +276,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 36,
-    gap: 18,
+    gap: 20,
   },
   headerRow: {
     flexDirection: "row",
@@ -243,8 +297,15 @@ const styles = StyleSheet.create({
   title: {
     color: "#f7f7f7",
     fontSize: 30,
-    lineHeight: 36,
+    lineHeight: 35,
     fontWeight: "600",
+    maxWidth: 320,
+  },
+  subtitle: {
+    color: "#878787",
+    fontSize: 14,
+    lineHeight: 21,
+    maxWidth: 300,
   },
   headerActions: {
     width: 42,
@@ -254,124 +315,83 @@ const styles = StyleSheet.create({
     borderColor: "#1d1d1d",
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#0b0b0b",
   },
   userInitial: {
     color: "#f4f4f4",
     fontSize: 14,
     fontWeight: "700",
   },
-  heroCard: {
-    borderRadius: 28,
+  quickActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  quickAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#1b1b1b",
+    borderColor: "#1d1d1d",
     backgroundColor: "#0b0b0b",
-    padding: 20,
-    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  heroTitle: {
-    color: "#f7f7f7",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  heroText: {
-    color: "#989898",
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  personaCard: {
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: "#1d2217",
-    backgroundColor: "#11170e",
-    padding: 20,
-    gap: 10,
-  },
-  personaEyebrow: {
-    color: "#93a884",
-    fontSize: 11,
-    letterSpacing: 1.8,
-    textTransform: "uppercase",
-  },
-  personaTitle: {
-    color: "#f1f7eb",
-    fontSize: 22,
-    fontWeight: "700",
-  },
-  personaText: {
-    color: "#c3ceb8",
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  personaFootnote: {
-    color: "#8ca07d",
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  stack: {
-    gap: 12,
-  },
-  messageCard: {
-    padding: 18,
-    borderRadius: 24,
-    backgroundColor: "#111111",
-    borderWidth: 1,
-    borderColor: "#191919",
-    gap: 10,
-  },
-  messagePrimary: {
+  quickActionPrimary: {
     backgroundColor: "#f4f4f4",
     borderColor: "#f4f4f4",
   },
-  messageMeta: {
+  quickActionText: {
+    color: "#d9d9d9",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  quickActionPrimaryText: {
+    color: "#050505",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  primaryCard: {
+    borderRadius: 28,
+    borderWidth: 1,
+    padding: 20,
+    gap: 12,
+  },
+  primaryMeta: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
   },
-  messageSender: {
-    color: "#7a7a7a",
-    fontSize: 12,
+  severityBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  severityText: {
+    fontSize: 11,
     fontWeight: "700",
+    letterSpacing: 1.2,
     textTransform: "uppercase",
-    letterSpacing: 1.8,
   },
-  messageDate: {
-    color: "#7a7a7a",
+  primaryDate: {
+    color: "#767676",
     fontSize: 12,
   },
-  messageTitle: {
-    color: "#f7f7f7",
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: "600",
+  primaryTitle: {
+    color: "#f6f6f6",
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "700",
   },
-  messageBody: {
-    color: "#afafaf",
+  primaryBody: {
+    color: "#b0b0b0",
     fontSize: 14,
     lineHeight: 22,
   },
-  messageTitlePrimary: {
-    color: "#050505",
-  },
-  messageBodyPrimary: {
-    color: "#2b2b2b",
-  },
-  emptyCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: "#1b1b1b",
-    padding: 18,
-    gap: 8,
-    backgroundColor: "#090909",
-  },
-  emptyTitle: {
-    color: "#f7f7f7",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  emptyText: {
-    color: "#8e8e8e",
-    fontSize: 14,
-    lineHeight: 21,
+  section: {
+    gap: 12,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -387,27 +407,61 @@ const styles = StyleSheet.create({
     color: "#8d8d8d",
     fontSize: 13,
   },
+  stack: {
+    gap: 10,
+  },
+  insightRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#181818",
+    backgroundColor: "#0b0b0b",
+    padding: 16,
+  },
+  insightIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#131313",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  insightCopy: {
+    flex: 1,
+    gap: 5,
+  },
+  insightTitle: {
+    color: "#f1f1f1",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "600",
+  },
+  insightBody: {
+    color: "#8f8f8f",
+    fontSize: 13,
+    lineHeight: 19,
+  },
   listCard: {
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#1b1b1b",
+    borderColor: "#171717",
     backgroundColor: "#090909",
     padding: 16,
-    gap: 14,
-  },
-  signalCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: "#1b1b1b",
-    backgroundColor: "#090909",
-    padding: 16,
-    gap: 12,
   },
   signalRow: {
     gap: 4,
-    paddingBottom: 12,
+    paddingBottom: 14,
+    marginBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: "#171717",
+  },
+  signalRowLast: {
+    paddingBottom: 0,
+    marginBottom: 0,
+    borderBottomWidth: 0,
   },
   signalTitle: {
     color: "#f2f2f2",
@@ -424,6 +478,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
+    paddingBottom: 14,
+    marginBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#171717",
+  },
+  rowLast: {
+    paddingBottom: 0,
+    marginBottom: 0,
+    borderBottomWidth: 0,
   },
   rowCopy: {
     flex: 1,
@@ -447,50 +510,36 @@ const styles = StyleSheet.create({
     color: "#7f7f7f",
     fontSize: 14,
   },
-  reportCard: {
-    borderRadius: 24,
+  emptyCard: {
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: "#1b1b1b",
-    backgroundColor: "#0b0b0b",
-    paddingHorizontal: 18,
-    paddingVertical: 20,
+    borderColor: "#171717",
+    backgroundColor: "#0a0a0a",
+    padding: 22,
     gap: 12,
   },
-  reportHead: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  reportMeta: {
-    flex: 1,
-    gap: 4,
-  },
-  reportBody: {
-    gap: 8,
-    paddingTop: 2,
-  },
-  reportBadge: {
-    color: "#7f7f7f",
-    fontSize: 11,
-    letterSpacing: 1.8,
-    textTransform: "uppercase",
-  },
-  reportDate: {
-    color: "#666666",
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  reportTitle: {
+  emptyTitle: {
     color: "#f7f7f7",
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 20,
     fontWeight: "600",
   },
-  reportSummary: {
-    color: "#929292",
+  emptyText: {
+    color: "#8e8e8e",
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  emptyAction: {
+    alignSelf: "flex-start",
+    marginTop: 6,
+    borderRadius: 999,
+    backgroundColor: "#f4f4f4",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  emptyActionText: {
+    color: "#050505",
     fontSize: 13,
-    lineHeight: 21,
+    fontWeight: "700",
   },
   sheetRoot: {
     flex: 1,
@@ -526,32 +575,42 @@ const styles = StyleSheet.create({
     letterSpacing: 2.2,
     textTransform: "uppercase",
   },
+  sheetProfile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  sheetAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#131313",
+    borderWidth: 1,
+    borderColor: "#232323",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.24,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  sheetAvatarLabel: {
+    color: "#f5f5f5",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  sheetProfileBody: {
+    flex: 1,
+    gap: 3,
+  },
   sheetTitle: {
     color: "#f7f7f7",
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "600",
   },
   sheetEmail: {
     color: "#929292",
     fontSize: 14,
-  },
-  sheetCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#1b1b1b",
-    backgroundColor: "#101010",
-    padding: 16,
-    gap: 8,
-  },
-  sheetCardLabel: {
-    color: "#f4f4f4",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  sheetCardText: {
-    color: "#8b8b8b",
-    fontSize: 14,
-    lineHeight: 21,
   },
   logoutButton: {
     marginTop: 4,

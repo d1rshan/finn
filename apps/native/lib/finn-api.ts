@@ -10,7 +10,6 @@ import {
   type InsightSeverity,
   type InsightSummary,
   type ReportMetadata,
-  type ReportPeriodType,
 } from "@/lib/finn-types";
 import { env } from "@finn/env/native";
 
@@ -35,25 +34,6 @@ type InsightDto = {
   status: string;
   title: string;
   body: string;
-  createdAt: string;
-};
-
-type ReportPromptDto = {
-  id: string;
-  periodType: ReportPeriodType;
-  title: string;
-  summary: string;
-  createdAt: string;
-};
-
-type ReportDto = {
-  id: string;
-  title: string;
-  summary: string;
-  periodType: ReportPeriodType;
-  periodStart: string;
-  periodEnd: string;
-  metadata: ReportMetadata;
   createdAt: string;
 };
 
@@ -115,7 +95,6 @@ export function useFeedQuery() {
       apiRequest<{
         insights: InsightDto[];
         recentExpenses: ExpenseDto[];
-        reportPrompts: ReportPromptDto[];
         snapshot: SnapshotDto;
         suggestedQuestions: string[];
       }>("/feed"),
@@ -126,25 +105,6 @@ export function useExpensesQuery() {
   return useQuery({
     queryKey: ["expenses"],
     queryFn: () => apiRequest<{ expenses: ExpenseDto[] }>("/expenses"),
-  });
-}
-
-export function useReportsQuery() {
-  return useQuery({
-    queryKey: ["reports"],
-    queryFn: () => apiRequest<{ reports: ReportDto[] }>("/reports"),
-  });
-}
-
-export function useReportDetailQuery(reportId?: string) {
-  return useQuery({
-    queryKey: ["report", reportId],
-    enabled: Boolean(reportId),
-    queryFn: () =>
-      apiRequest<{
-        report: ReportDto;
-        expenses: ExpenseDto[];
-      }>(`/reports/${reportId}`),
   });
 }
 

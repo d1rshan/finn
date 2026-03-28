@@ -34,7 +34,6 @@ export default function LogScreen() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["feed"] }),
         queryClient.invalidateQueries({ queryKey: ["expenses"] }),
-        queryClient.invalidateQueries({ queryKey: ["reports"] }),
       ]);
     },
     onError(errorValue) {
