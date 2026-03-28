@@ -2,6 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 
 import { authClient } from "@/lib/auth-client";
 import {
+  type AnalyticsCategorySummary,
+  type AnalyticsMerchantSummary,
+  type AnalyticsOverview,
   type AnalyticsPeriodBucket,
   type AnalyticsPeriodType,
   expenseCategories,
@@ -115,7 +118,10 @@ export function useAnalyticsQuery(period: AnalyticsPeriodType) {
       apiRequest<{
         period: AnalyticsPeriodType;
         selectedPeriodId: string | null;
+        overview: AnalyticsOverview;
         periods: AnalyticsPeriodBucket[];
+        categories: AnalyticsCategorySummary[];
+        topMerchants: AnalyticsMerchantSummary[];
       }>(`/analytics?period=${period}`),
   });
 }

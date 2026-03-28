@@ -22,7 +22,7 @@ import {
 import { askFinnWithGemini } from "@/lib/gemini";
 
 type ExpenseRow = typeof expense.$inferSelect;
-type AnalyticsPeriod = "weekly" | "monthly";
+type AnalyticsPeriod = "daily" | "weekly" | "monthly";
 
 const llmAskResponseSchema = z.object({
   answer: z.string().trim().min(1),
@@ -51,6 +51,10 @@ function startOfWeek(date: Date) {
   const next = startOfDay(date);
   next.setDate(next.getDate() + diff);
   return next;
+}
+
+function endOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
 }
 
 function endOfWeek(date: Date) {
@@ -456,12 +460,24 @@ export async function deleteExpenseForUser(userId: string, expenseId: string) {
 }
 
 function buildAnalyticsLabel(period: AnalyticsPeriod, periodStart: Date) {
+  if (period === "daily") {
+    return periodStart.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  }
+
   return period === "weekly"
     ? periodStart.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
     : periodStart.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
 }
 
 function buildAnalyticsRangeLabel(period: AnalyticsPeriod, periodStart: Date, periodEnd: Date) {
+  if (period === "daily") {
+    return periodStart.toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }
+
   if (period === "weekly") {
     const endDate = new Date(periodEnd.getTime() - 1);
     return `${periodStart.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} - ${endDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
@@ -473,10 +489,25 @@ function buildAnalyticsRangeLabel(period: AnalyticsPeriod, periodStart: Date, pe
 function buildAnalyticsSummary(expensesForPeriod: ExpenseRow[]) {
   const totalSpend = sumExpenses(expensesForPeriod);
   const transactionCount = expensesForPeriod.length;
+  const periodStart = expensesForPeriod.reduce<Date | null>(
+    (earliest, entry) =>
+      earliest && earliest.getTime() < entry.occurredAt.getTime() ? earliest : entry.occurredAt,
+    null,
+  );
+  const periodEnd = expensesForPeriod.reduce<Date | null>(
+    (latest, entry) =>
+      latest && latest.getTime() > entry.occurredAt.getTime() ? latest : entry.occurredAt,
+    null,
+  );
+  const spanDays =
+    periodStart && periodEnd
+      ? Math.max(1, Math.ceil((endOfDay(periodEnd).getTime() - startOfDay(periodStart).getTime()) / 86_400_000))
+      : 1;
 
   const categoryTotals = expenseCategories.map((category) => ({
     category,
     amountMinor: sumExpenses(expensesForPeriod.filter((entry) => entry.category === category)),
+    transactionCount: expensesForPeriod.filter((entry) => entry.category === category).length,
   }));
 
   const topCategory = categoryTotals
@@ -525,6 +556,8 @@ function buildAnalyticsSummary(expensesForPeriod: ExpenseRow[]) {
   return {
     totalSpend,
     transactionCount,
+    averagePayment: transactionCount > 0 ? Math.round(totalSpend / transactionCount) : 0,
+    dailyAverage: Math.round(totalSpend / spanDays),
     topCategory: topCategory
       ? {
           category: topCategory.category,
@@ -532,8 +565,110 @@ function buildAnalyticsSummary(expensesForPeriod: ExpenseRow[]) {
         }
       : null,
     topMerchant,
+    categoryTotals: Object.fromEntries(
+      categoryTotals.map((entry) => [
+        entry.category,
+        {
+          amountMinor: entry.amountMinor,
+          transactionCount: entry.transactionCount,
+        },
+      ]),
+    ) as Record<ExpenseCategory, { amountMinor: number; transactionCount: number }>,
     categoryBreakdown,
   };
+}
+
+function getPeriodBounds(period: AnalyticsPeriod, date: Date) {
+  if (period === "daily") {
+    return {
+      periodStart: startOfDay(date),
+      periodEnd: endOfDay(date),
+    };
+  }
+
+  if (period === "weekly") {
+    return {
+      periodStart: startOfWeek(date),
+      periodEnd: endOfWeek(date),
+    };
+  }
+
+  return {
+    periodStart: startOfMonth(date),
+    periodEnd: endOfMonth(date),
+  };
+}
+
+function buildAnalyticsOverview(expensesForUser: ExpenseRow[]) {
+  const totalSpend = sumExpenses(expensesForUser);
+  const transactionCount = expensesForUser.length;
+  const sorted = [...expensesForUser].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+  const activeDays = new Set(
+    expensesForUser.map((entry) => startOfDay(entry.occurredAt).toISOString()),
+  ).size;
+  const activeMonths = new Set(
+    expensesForUser.map(
+      (entry) => `${entry.occurredAt.getFullYear()}-${String(entry.occurredAt.getMonth() + 1).padStart(2, "0")}`,
+    ),
+  ).size;
+
+  return {
+    totalSpend,
+    transactionCount,
+    averagePayment: transactionCount > 0 ? Math.round(totalSpend / transactionCount) : 0,
+    activeDays,
+    activeMonths,
+    firstExpenseAt: sorted[0]?.occurredAt ?? null,
+    lastExpenseAt: sorted[sorted.length - 1]?.occurredAt ?? null,
+  };
+}
+
+function buildCategorySummaries(expensesForUser: ExpenseRow[]) {
+  const totalSpend = Math.max(sumExpenses(expensesForUser), 1);
+
+  return expenseCategories
+    .map((category) => {
+      const entries = expensesForUser.filter((entry) => entry.category === category);
+      const amountMinor = sumExpenses(entries);
+      const latest = [...entries].sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())[0];
+
+      return {
+        category,
+        totalSpend: amountMinor,
+        transactionCount: entries.length,
+        averagePayment: entries.length > 0 ? Math.round(amountMinor / entries.length) : 0,
+        share: amountMinor > 0 ? Number(((amountMinor / totalSpend) * 100).toFixed(1)) : 0,
+        lastExpenseAt: latest?.occurredAt ?? null,
+      };
+    })
+    .filter((entry) => entry.transactionCount > 0)
+    .sort((a, b) => b.totalSpend - a.totalSpend);
+}
+
+function buildTopMerchantSummaries(expensesForUser: ExpenseRow[]) {
+  const merchantMap = new Map<string, { amountMinor: number; count: number; lastOccurredAt: Date }>();
+
+  for (const entry of expensesForUser) {
+    const current = merchantMap.get(entry.merchantName);
+    merchantMap.set(entry.merchantName, {
+      amountMinor: (current?.amountMinor ?? 0) + entry.amountMinor,
+      count: (current?.count ?? 0) + 1,
+      lastOccurredAt:
+        current && current.lastOccurredAt.getTime() > entry.occurredAt.getTime()
+          ? current.lastOccurredAt
+          : entry.occurredAt,
+    });
+  }
+
+  return [...merchantMap.entries()]
+    .sort((a, b) => b[1].amountMinor - a[1].amountMinor)
+    .slice(0, 6)
+    .map(([merchantName, value]) => ({
+      merchantName,
+      amountMinor: value.amountMinor,
+      count: value.count,
+      lastOccurredAt: value.lastOccurredAt,
+    }));
 }
 
 async function buildAskMoneyContext(userId: string) {
@@ -639,8 +774,7 @@ export async function getAnalytics(userId: string, period: AnalyticsPeriod) {
   >();
 
   for (const entry of expensesForUser) {
-    const periodStart = period === "weekly" ? startOfWeek(entry.occurredAt) : startOfMonth(entry.occurredAt);
-    const periodEnd = period === "weekly" ? endOfWeek(entry.occurredAt) : endOfMonth(entry.occurredAt);
+    const { periodStart, periodEnd } = getPeriodBounds(period, entry.occurredAt);
     const bucketKey = periodStart.toISOString();
     const bucket = buckets.get(bucketKey) ?? {
       periodStart,
@@ -653,7 +787,6 @@ export async function getAnalytics(userId: string, period: AnalyticsPeriod) {
 
   const periods = [...buckets.values()]
     .sort((a, b) => b.periodStart.getTime() - a.periodStart.getTime())
-    .slice(0, period === "weekly" ? 8 : 6)
     .reverse()
     .map((bucket) => {
       const summary = buildAnalyticsSummary(bucket.expensesForPeriod);
@@ -671,6 +804,9 @@ export async function getAnalytics(userId: string, period: AnalyticsPeriod) {
   return {
     period,
     selectedPeriodId: periods[periods.length - 1]?.id ?? null,
+    overview: buildAnalyticsOverview(expensesForUser),
     periods,
+    categories: buildCategorySummaries(expensesForUser),
+    topMerchants: buildTopMerchantSummaries(expensesForUser),
   };
 }

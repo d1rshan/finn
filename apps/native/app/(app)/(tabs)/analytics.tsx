@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
@@ -6,169 +7,192 @@ import {
   StyleSheet,
   Text,
   View,
-  Dimensions,
 } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-} from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
 
 import { Container } from "@/components/container";
 import {
   formatAnalyticsCategory,
-  formatCategory,
   formatCurrency,
+  formatDate,
 } from "@/lib/format";
 import { useAnalyticsQuery } from "@/lib/finn-api";
-import type { AnalyticsCategoryBreakdown, AnalyticsPeriodBucket, AnalyticsPeriodType } from "@/lib/finn-types";
+import type {
+  AnalyticsCategorySummary,
+  AnalyticsPeriodType,
+  ExpenseCategory,
+} from "@/lib/finn-types";
 
-const CATEGORY_ICONS: Record<string, keyof typeof Ionicons.prototype.constructor.name> = {
-  food: "fast-food",
-  commute: "car",
-  groceries: "basket",
-  shopping: "bag-handle",
-  bills: "receipt",
-  entertainment: "game-controller",
-  health: "medical",
-  travel: "airplane",
-  transfer: "swap-horizontal",
-  other: "ellipsis-horizontal",
-};
-
-// More muted, premium palette consistent with "Finn"
-const CATEGORY_COLORS: Record<string, string> = {
+const CATEGORY_COLORS: Record<ExpenseCategory | "all", string> = {
+  all: "#f4f4f4",
   food: "#d4d4d4",
-  commute: "#a3a3a3",
-  groceries: "#737373",
-  shopping: "#525252",
-  bills: "#404040",
-  entertainment: "#262626",
-  health: "#e5e5e5",
-  travel: "#f5f5f5",
-  transfer: "#171717",
-  other: "#262626",
+  commute: "#b6b6b6",
+  groceries: "#9a9a9a",
+  shopping: "#808080",
+  bills: "#6a6a6a",
+  entertainment: "#545454",
+  health: "#c9c9c9",
+  travel: "#f0f0f0",
+  transfer: "#3f3f3f",
+  other: "#707070",
 };
 
-function AnimatedBar({
-  bucket,
-  maxSpend,
+const PERIOD_OPTIONS: AnalyticsPeriodType[] = ["daily", "weekly", "monthly"];
+
+function periodLabel(period: AnalyticsPeriodType) {
+  return period.charAt(0).toUpperCase() + period.slice(1);
+}
+
+function BucketBar({
+  amountMinor,
+  maxAmountMinor,
   isSelected,
+  color,
+  label,
   onPress,
 }: {
-  bucket: AnalyticsPeriodBucket;
-  maxSpend: number;
+  amountMinor: number;
+  maxAmountMinor: number;
   isSelected: boolean;
+  color: string;
+  label: string;
   onPress: () => void;
 }) {
-  const height = useSharedValue(0);
-  const scale = useSharedValue(1);
-
-  useEffect(() => {
-    const targetHeight = Math.max(12, (bucket.totalSpend / maxSpend) * 120);
-    height.value = withSpring(targetHeight, { damping: 15 });
-  }, [bucket.totalSpend, maxSpend]);
-
-  useEffect(() => {
-    scale.value = withSpring(isSelected ? 1.05 : 1);
-  }, [isSelected]);
-
-  const barStyle = useAnimatedStyle(() => ({
-    height: height.value,
-    backgroundColor: isSelected ? "#f4f4f4" : "#262626",
-    transform: [{ scaleX: scale.value }],
-  }));
-
-  const labelStyle = useAnimatedStyle(() => ({
-    color: isSelected ? "#f4f4f4" : "#737373",
-    fontWeight: isSelected ? "700" : "500",
-  }));
+  const height = Math.max(10, Math.round((amountMinor / Math.max(maxAmountMinor, 1)) * 128));
 
   return (
-    <Pressable onPress={onPress} style={styles.barContainer}>
+    <Pressable style={styles.barItem} onPress={onPress}>
       <View style={styles.barTrack}>
-        <Animated.View style={[styles.bar, barStyle]} />
+        <View
+          style={[
+            styles.barFill,
+            {
+              height,
+              backgroundColor: isSelected ? color : "#242424",
+            },
+          ]}
+        />
       </View>
-      <Animated.Text style={[styles.barLabel, labelStyle]}>
-        {bucket.label}
-      </Animated.Text>
+      <Text style={[styles.barLabel, isSelected ? styles.barLabelActive : null]}>{label}</Text>
     </Pressable>
   );
 }
 
-function CategoryProgress({
+function CategoryCard({
   item,
-  index,
+  selected,
+  onPress,
 }: {
-  item: AnalyticsCategoryBreakdown;
-  index: number;
+  item: AnalyticsCategorySummary;
+  selected: boolean;
+  onPress: () => void;
 }) {
-  const progress = useSharedValue(0);
-
-  useEffect(() => {
-    progress.value = withTiming(item.percentage / 100, { duration: 800 + index * 100 });
-  }, [item.percentage]);
-
-  const progressStyle = useAnimatedStyle(() => ({
-    width: `${progress.value * 100}%`,
-    backgroundColor: CATEGORY_COLORS[item.category] || "#444",
-  }));
-
-  const iconName = CATEGORY_ICONS[item.category] || "help-circle";
-
   return (
-    <View style={styles.categoryRow}>
-      <View style={[styles.categoryIconWrap, { backgroundColor: "#171717" }]}>
-        <Ionicons name={iconName as any} size={18} color="#d4d4d4" />
+    <Pressable
+      onPress={onPress}
+      style={[styles.categoryCard, selected ? styles.categoryCardSelected : null]}
+    >
+      <View style={styles.categoryCardHeader}>
+        <Text style={styles.categoryCardTitle}>{formatAnalyticsCategory(item.category)}</Text>
+        <Text style={styles.categoryCardShare}>{item.share}%</Text>
       </View>
-      <View style={styles.categoryInfo}>
-        <View style={styles.categoryTextRow}>
-          <Text style={styles.categoryName}>{formatAnalyticsCategory(item.category)}</Text>
-          <Text style={styles.categoryAmount}>{formatCurrency(item.amountMinor)}</Text>
-        </View>
-        <View style={styles.progressBarTrack}>
-          <Animated.View style={[styles.progressBarFill, progressStyle]} />
-        </View>
-        <Text style={styles.categoryPercent}>{item.percentage}% of total</Text>
-      </View>
-    </View>
+      <Text style={styles.categoryCardValue}>{formatCurrency(item.totalSpend)}</Text>
+      <Text style={styles.categoryCardMeta}>
+        {item.transactionCount} payments · Avg {formatCurrency(item.averagePayment)}
+      </Text>
+    </Pressable>
   );
 }
 
 export default function AnalyticsScreen() {
   const [period, setPeriod] = useState<AnalyticsPeriodType>("weekly");
-  const analyticsQuery = useAnalyticsQuery(period);
   const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | "all">("all");
+  const analyticsQuery = useAnalyticsQuery(period);
+
+  const periods = analyticsQuery.data?.periods ?? [];
+  const overview = analyticsQuery.data?.overview;
+  const categories = analyticsQuery.data?.categories ?? [];
+  const topMerchants = analyticsQuery.data?.topMerchants ?? [];
+
+  const filteredPeriods = useMemo(() => {
+    if (selectedCategory === "all") {
+      return periods;
+    }
+
+    return periods.filter((entry) => entry.categoryTotals[selectedCategory].amountMinor > 0);
+  }, [periods, selectedCategory]);
 
   useEffect(() => {
-    if (analyticsQuery.data?.selectedPeriodId) {
-      setSelectedPeriodId(analyticsQuery.data.selectedPeriodId);
+    const preferredId = analyticsQuery.data?.selectedPeriodId;
+    if (!filteredPeriods.length) {
+      setSelectedPeriodId(null);
+      return;
     }
-  }, [analyticsQuery.data?.selectedPeriodId]);
 
-  const periods = analyticsQuery.data?.periods || [];
-  const selectedIndex = periods.findIndex(p => p.id === selectedPeriodId);
-  const selectedBucket = periods[selectedIndex] || periods[periods.length - 1];
+    if (preferredId && filteredPeriods.some((entry) => entry.id === preferredId)) {
+      setSelectedPeriodId(preferredId);
+      return;
+    }
 
-  const maxSpend = useMemo(() => {
-    return Math.max(...periods.map(p => p.totalSpend), 1);
-  }, [periods]);
+    if (!selectedPeriodId || !filteredPeriods.some((entry) => entry.id === selectedPeriodId)) {
+      setSelectedPeriodId(filteredPeriods[filteredPeriods.length - 1]?.id ?? null);
+    }
+  }, [analyticsQuery.data?.selectedPeriodId, filteredPeriods, selectedPeriodId]);
 
-  const previousBucket = selectedIndex > 0 ? periods[selectedIndex - 1] : null;
-  const changePercentage = useMemo(() => {
-    if (!previousBucket || previousBucket.totalSpend === 0) return null;
-    return ((selectedBucket.totalSpend - previousBucket.totalSpend) / previousBucket.totalSpend) * 100;
-  }, [selectedBucket, previousBucket]);
+  const selectedIndex = filteredPeriods.findIndex((entry) => entry.id === selectedPeriodId);
+  const selectedBucket = filteredPeriods[selectedIndex] ?? filteredPeriods[filteredPeriods.length - 1] ?? null;
+  const previousBucket = selectedIndex > 0 ? filteredPeriods[selectedIndex - 1] : null;
 
-  const dailyAverage = useMemo(() => {
-    if (!selectedBucket) return 0;
+  const selectedBucketMetrics = useMemo(() => {
+    if (!selectedBucket) {
+      return null;
+    }
+
+    if (selectedCategory === "all") {
+      return {
+        totalSpend: selectedBucket.totalSpend,
+        transactionCount: selectedBucket.transactionCount,
+        averagePayment: selectedBucket.averagePayment,
+        dailyAverage: selectedBucket.dailyAverage,
+      };
+    }
+
+    const categoryTotals = selectedBucket.categoryTotals[selectedCategory];
     const start = new Date(selectedBucket.periodStart);
     const end = new Date(selectedBucket.periodEnd);
-    const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
-    return selectedBucket.totalSpend / days;
-  }, [selectedBucket]);
+    const spanDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86_400_000));
+
+    return {
+      totalSpend: categoryTotals.amountMinor,
+      transactionCount: categoryTotals.transactionCount,
+      averagePayment:
+        categoryTotals.transactionCount > 0
+          ? Math.round(categoryTotals.amountMinor / categoryTotals.transactionCount)
+          : 0,
+      dailyAverage: Math.round(categoryTotals.amountMinor / spanDays),
+    };
+  }, [selectedBucket, selectedCategory]);
+
+  const previousAmount = useMemo(() => {
+    if (!previousBucket) {
+      return null;
+    }
+
+    return selectedCategory === "all"
+      ? previousBucket.totalSpend
+      : previousBucket.categoryTotals[selectedCategory].amountMinor;
+  }, [previousBucket, selectedCategory]);
+
+  const selectedAmount = selectedBucketMetrics?.totalSpend ?? 0;
+  const changePercentage =
+    previousAmount && previousAmount > 0 ? ((selectedAmount - previousAmount) / previousAmount) * 100 : null;
+  const maxSpend = Math.max(
+    ...filteredPeriods.map((entry) =>
+      selectedCategory === "all" ? entry.totalSpend : entry.categoryTotals[selectedCategory].amountMinor,
+    ),
+    1,
+  );
+  const timelineRows = [...filteredPeriods].reverse();
 
   return (
     <Container>
@@ -184,117 +208,245 @@ export default function AnalyticsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <View style={styles.headerText}>
-            <Text style={styles.eyebrow}>ANALYTICS</Text>
-            <Text style={styles.title}>Weekly and monthly movement, without the clutter.</Text>
+          <Text style={styles.eyebrow}>ANALYTICS</Text>
+          <Text style={styles.title}>Everything Finn has seen, arranged into one readable surface.</Text>
+          <Text style={styles.subtitle}>
+            Switch between daily, weekly, and monthly history, then narrow the view by category without losing the full context.
+          </Text>
+        </View>
+
+        {overview ? (
+          <View style={styles.heroCard}>
+            <Text style={styles.heroEyebrow}>All-time overview</Text>
+            <Text style={styles.heroValue}>{formatCurrency(overview.totalSpend)}</Text>
+            <Text style={styles.heroBody}>
+              {overview.transactionCount} payments since{" "}
+              {overview.firstExpenseAt ? formatDate(overview.firstExpenseAt) : "the start"}.
+            </Text>
+            <View style={styles.metricGrid}>
+              <View style={styles.metricTile}>
+                <Text style={styles.metricLabel}>Average payment</Text>
+                <Text style={styles.metricValue}>{formatCurrency(overview.averagePayment)}</Text>
+              </View>
+              <View style={styles.metricTile}>
+                <Text style={styles.metricLabel}>Active days</Text>
+                <Text style={styles.metricValue}>{overview.activeDays}</Text>
+              </View>
+              <View style={styles.metricTile}>
+                <Text style={styles.metricLabel}>Active months</Text>
+                <Text style={styles.metricValue}>{overview.activeMonths}</Text>
+              </View>
+            </View>
           </View>
+        ) : null}
+
+        <View style={styles.controlSection}>
+          <View style={styles.segmentedRow}>
+            {PERIOD_OPTIONS.map((entry) => (
+              <Pressable
+                key={entry}
+                onPress={() => setPeriod(entry)}
+                style={[styles.segmentButton, period === entry ? styles.segmentButtonActive : null]}
+              >
+                <Text style={[styles.segmentText, period === entry ? styles.segmentTextActive : null]}>
+                  {periodLabel(entry)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+            <Pressable
+              onPress={() => setSelectedCategory("all")}
+              style={[
+                styles.filterChip,
+                selectedCategory === "all"
+                  ? { backgroundColor: "#f4f4f4", borderColor: "#f4f4f4" }
+                  : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  selectedCategory === "all" ? styles.filterChipTextActive : null,
+                ]}
+              >
+                All categories
+              </Text>
+            </Pressable>
+            {categories.map((entry) => (
+              <Pressable
+                key={entry.category}
+                onPress={() => setSelectedCategory(entry.category)}
+                style={[
+                  styles.filterChip,
+                  selectedCategory === entry.category
+                    ? {
+                        borderColor: CATEGORY_COLORS[entry.category],
+                        backgroundColor: "#111111",
+                      }
+                    : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    selectedCategory === entry.category ? { color: "#f4f4f4" } : null,
+                  ]}
+                >
+                  {formatAnalyticsCategory(entry.category)}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
 
-        <View style={styles.toggleRow}>
-          <Pressable
-            onPress={() => setPeriod("weekly")}
-            style={[styles.toggleButton, period === "weekly" ? styles.toggleButtonActive : null]}
-          >
-            <Text style={[styles.toggleLabel, period === "weekly" ? styles.toggleLabelActive : null]}>
-              Weekly
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setPeriod("monthly")}
-            style={[styles.toggleButton, period === "monthly" ? styles.toggleButtonActive : null]}
-          >
-            <Text style={[styles.toggleLabel, period === "monthly" ? styles.toggleLabelActive : null]}>
-              Monthly
-            </Text>
-          </Pressable>
-        </View>
-
-        {selectedBucket ? (
+        {selectedBucket && selectedBucketMetrics ? (
           <>
-            <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>{selectedBucket.rangeLabel}</Text>
-              <Text style={styles.mainTotal}>{formatCurrency(selectedBucket.totalSpend)}</Text>
-              {changePercentage !== null && (
-                <View style={styles.changeRow}>
-                  <Ionicons
-                    name={changePercentage >= 0 ? "trending-up" : "trending-down"}
-                    size={16}
-                    color={changePercentage >= 0 ? "#ff6b6b" : "#1dd1a1"}
-                  />
-                  <Text style={[styles.changeText, { color: changePercentage >= 0 ? "#ff6b6b" : "#1dd1a1" }]}>
-                    {Math.abs(changePercentage).toFixed(1)}% vs previous period
-                  </Text>
-                </View>
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>History</Text>
+                <Text style={styles.sectionMeta}>{filteredPeriods.length} periods</Text>
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chartRow}>
+                {filteredPeriods.map((entry) => {
+                  const amountMinor =
+                    selectedCategory === "all"
+                      ? entry.totalSpend
+                      : entry.categoryTotals[selectedCategory].amountMinor;
+
+                  return (
+                    <BucketBar
+                      key={entry.id}
+                      amountMinor={amountMinor}
+                      maxAmountMinor={maxSpend}
+                      isSelected={entry.id === selectedBucket.id}
+                      color={CATEGORY_COLORS[selectedCategory]}
+                      label={entry.label}
+                      onPress={() => setSelectedPeriodId(entry.id)}
+                    />
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            <View style={styles.focusCard}>
+              <Text style={styles.focusEyebrow}>
+                {selectedCategory === "all"
+                  ? selectedBucket.rangeLabel
+                  : `${formatAnalyticsCategory(selectedCategory)} · ${selectedBucket.rangeLabel}`}
+              </Text>
+              <Text style={styles.focusValue}>{formatCurrency(selectedBucketMetrics.totalSpend)}</Text>
+              {changePercentage !== null ? (
+                <Text style={[styles.focusChange, changePercentage >= 0 ? styles.changeUp : styles.changeDown]}>
+                  {Math.abs(changePercentage).toFixed(1)}% vs previous {period}
+                </Text>
+              ) : (
+                <Text style={styles.focusHint}>No previous comparable period yet.</Text>
               )}
+
+              <View style={styles.metricGrid}>
+                <View style={styles.metricTile}>
+                  <Text style={styles.metricLabel}>Payments</Text>
+                  <Text style={styles.metricValue}>{selectedBucketMetrics.transactionCount}</Text>
+                </View>
+                <View style={styles.metricTile}>
+                  <Text style={styles.metricLabel}>Average payment</Text>
+                  <Text style={styles.metricValue}>{formatCurrency(selectedBucketMetrics.averagePayment)}</Text>
+                </View>
+                <View style={styles.metricTile}>
+                  <Text style={styles.metricLabel}>Per day</Text>
+                  <Text style={styles.metricValue}>{formatCurrency(selectedBucketMetrics.dailyAverage)}</Text>
+                </View>
+              </View>
             </View>
 
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Trend</Text>
-              <View style={styles.chartContainer}>
-                {periods.map((p) => (
-                  <AnimatedBar
-                    key={p.id}
-                    bucket={p}
-                    maxSpend={maxSpend}
-                    isSelected={p.id === selectedPeriodId}
-                    onPress={() => setSelectedPeriodId(p.id)}
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Category intelligence</Text>
+                <Text style={styles.sectionMeta}>All-time</Text>
+              </View>
+
+              <View style={styles.categoryGrid}>
+                {categories.map((entry) => (
+                  <CategoryCard
+                    key={entry.category}
+                    item={entry}
+                    selected={selectedCategory === entry.category}
+                    onPress={() => setSelectedCategory(entry.category)}
                   />
                 ))}
               </View>
             </View>
 
-            <View style={styles.statsGrid}>
-              <View style={styles.statBox}>
-                <Text style={styles.statLabel}>Daily average</Text>
-                <Text style={styles.statValue}>{formatCurrency(dailyAverage)}</Text>
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Top merchants</Text>
+                <Text style={styles.sectionMeta}>Overall</Text>
               </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statLabel}>Payments</Text>
-                <Text style={styles.statValue}>{selectedBucket.transactionCount}</Text>
+
+              <View style={styles.listCard}>
+                {topMerchants.map((entry, index) => (
+                  <View
+                    key={`${entry.merchantName}-${index}`}
+                    style={[styles.listRow, index === topMerchants.length - 1 ? styles.listRowLast : null]}
+                  >
+                    <View style={styles.listCopy}>
+                      <Text style={styles.listTitle}>{entry.merchantName}</Text>
+                      <Text style={styles.listMeta}>
+                        {entry.count} payments · Last seen {formatDate(entry.lastOccurredAt)}
+                      </Text>
+                    </View>
+                    <Text style={styles.listValue}>{formatCurrency(entry.amountMinor)}</Text>
+                  </View>
+                ))}
               </View>
             </View>
 
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Category mix</Text>
-              <View style={styles.categoriesCard}>
-                {selectedBucket.categoryBreakdown.length > 0 ? (
-                  selectedBucket.categoryBreakdown.map((item, index) => (
-                    <CategoryProgress key={item.category} item={item} index={index} />
-                  ))
-                ) : (
-                  <Text style={styles.placeholder}>No category signal yet.</Text>
-                )}
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Timeline</Text>
+                <Text style={styles.sectionMeta}>From the start</Text>
               </View>
-            </View>
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Top merchant</Text>
-              {selectedBucket.topMerchant ? (
-                <View style={styles.merchantCard}>
-                  <View style={styles.merchantIcon}>
-                    <Text style={styles.merchantInitial}>
-                      {selectedBucket.topMerchant.merchantName.charAt(0)}
-                    </Text>
-                  </View>
-                  <View style={styles.merchantInfo}>
-                    <Text style={styles.merchantName}>{selectedBucket.topMerchant.merchantName}</Text>
-                    <Text style={styles.merchantMeta}>
-                      {selectedBucket.topMerchant.count} payments · {formatCurrency(selectedBucket.topMerchant.amountMinor)}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#444" />
-                </View>
-              ) : (
-                <View style={styles.merchantCard}>
-                  <Text style={styles.placeholder}>No merchant signal yet.</Text>
-                </View>
-              )}
+              <View style={styles.listCard}>
+                {timelineRows.map((entry, index) => {
+                  const amountMinor =
+                    selectedCategory === "all"
+                      ? entry.totalSpend
+                      : entry.categoryTotals[selectedCategory].amountMinor;
+                  const transactionCount =
+                    selectedCategory === "all"
+                      ? entry.transactionCount
+                      : entry.categoryTotals[selectedCategory].transactionCount;
+
+                  return (
+                    <Pressable
+                      key={entry.id}
+                      onPress={() => setSelectedPeriodId(entry.id)}
+                      style={[
+                        styles.listRow,
+                        entry.id === selectedBucket.id ? styles.listRowActive : null,
+                        index === timelineRows.length - 1 ? styles.listRowLast : null,
+                      ]}
+                    >
+                      <View style={styles.listCopy}>
+                        <Text style={styles.listTitle}>{entry.rangeLabel}</Text>
+                        <Text style={styles.listMeta}>{transactionCount} payments</Text>
+                      </View>
+                      <Text style={styles.listValue}>{formatCurrency(amountMinor)}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
           </>
         ) : (
           <View style={styles.emptyState}>
             <Ionicons name="pie-chart-outline" size={48} color="#222" />
-            <Text style={styles.emptyText}>Log a few expenses to unlock analytics.</Text>
+            <Text style={styles.emptyTitle}>No analytics yet</Text>
+            <Text style={styles.emptyText}>Log a few transactions and Finn will build a readable history here.</Text>
           </View>
         )}
       </ScrollView>
@@ -306,13 +458,10 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 20,
     paddingTop: 18,
-    paddingBottom: 36,
+    paddingBottom: 40,
     gap: 18,
   },
   header: {
-    gap: 10,
-  },
-  headerText: {
     gap: 10,
   },
   eyebrow: {
@@ -327,32 +476,160 @@ const styles = StyleSheet.create({
     lineHeight: 36,
     fontWeight: "600",
   },
-  toggleRow: {
+  subtitle: {
+    color: "#868686",
+    fontSize: 14,
+    lineHeight: 21,
+    maxWidth: 340,
+  },
+  heroCard: {
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "#1a1a1a",
+    backgroundColor: "#0a0a0a",
+    padding: 20,
+    gap: 10,
+  },
+  heroEyebrow: {
+    color: "#7b7b7b",
+    fontSize: 11,
+    letterSpacing: 1.8,
+    textTransform: "uppercase",
+  },
+  heroValue: {
+    color: "#f5f5f5",
+    fontSize: 40,
+    fontWeight: "600",
+  },
+  heroBody: {
+    color: "#909090",
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  metricGrid: {
     flexDirection: "row",
-    backgroundColor: "#0d0d0d",
-    borderRadius: 999,
-    padding: 4,
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  metricTile: {
+    flexGrow: 1,
+    minWidth: 96,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: "#171717",
+    backgroundColor: "#070707",
+    padding: 14,
+    gap: 6,
   },
-  toggleButton: {
+  metricLabel: {
+    color: "#6f6f6f",
+    fontSize: 11,
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
+  },
+  metricValue: {
+    color: "#f2f2f2",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  controlSection: {
+    gap: 12,
+  },
+  segmentedRow: {
+    flexDirection: "row",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#171717",
+    backgroundColor: "#0b0b0b",
+    padding: 4,
+  },
+  segmentButton: {
     flex: 1,
-    paddingVertical: 12,
     alignItems: "center",
     borderRadius: 999,
+    paddingVertical: 12,
   },
-  toggleButtonActive: {
+  segmentButtonActive: {
     backgroundColor: "#f4f4f4",
   },
-  toggleLabel: {
+  segmentText: {
     color: "#8b8b8b",
     fontSize: 14,
     fontWeight: "600",
   },
-  toggleLabelActive: {
+  segmentTextActive: {
     color: "#050505",
   },
-  card: {
+  filterRow: {
+    gap: 10,
+    paddingRight: 6,
+  },
+  filterChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#1b1b1b",
+    backgroundColor: "#0b0b0b",
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  filterChipText: {
+    color: "#9a9a9a",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  filterChipTextActive: {
+    color: "#050505",
+  },
+  section: {
+    gap: 12,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  sectionTitle: {
+    color: "#f4f4f4",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  sectionMeta: {
+    color: "#727272",
+    fontSize: 12,
+  },
+  chartRow: {
+    gap: 10,
+    paddingRight: 8,
+  },
+  barItem: {
+    width: 26,
+    alignItems: "center",
+    gap: 8,
+  },
+  barTrack: {
+    height: 132,
+    width: 18,
+    borderRadius: 10,
+    backgroundColor: "#101010",
+    justifyContent: "flex-end",
+    overflow: "hidden",
+    padding: 2,
+  },
+  barFill: {
+    width: "100%",
+    borderRadius: 8,
+  },
+  barLabel: {
+    color: "#666666",
+    fontSize: 10,
+    textAlign: "center",
+  },
+  barLabelActive: {
+    color: "#f4f4f4",
+    fontWeight: "700",
+  },
+  focusCard: {
     borderRadius: 28,
     borderWidth: 1,
     borderColor: "#1b1b1b",
@@ -360,197 +637,133 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 10,
   },
-  cardEyebrow: {
-    color: "#7e7e7e",
+  focusEyebrow: {
+    color: "#7d7d7d",
     fontSize: 11,
-    letterSpacing: 1.8,
+    letterSpacing: 1.7,
     textTransform: "uppercase",
   },
-  mainTotal: {
-    color: "#f4f4f4",
-    fontSize: 42,
+  focusValue: {
+    color: "#f5f5f5",
+    fontSize: 34,
     fontWeight: "600",
   },
-  changeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 4,
-  },
-  changeText: {
+  focusChange: {
     fontSize: 13,
     fontWeight: "600",
   },
-  section: {
-    gap: 14,
+  changeUp: {
+    color: "#e17d7d",
   },
-  sectionTitle: {
-    color: "#f7f7f7",
-    fontSize: 18,
-    fontWeight: "600",
+  changeDown: {
+    color: "#8ad1b0",
   },
-  chartContainer: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    height: 160,
-    backgroundColor: "#0a0a0a",
-    borderRadius: 28,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#1b1b1b",
+  focusHint: {
+    color: "#7d7d7d",
+    fontSize: 13,
   },
-  barContainer: {
-    flex: 1,
-    alignItems: "center",
-    gap: 8,
+  categoryGrid: {
+    gap: 10,
   },
-  barTrack: {
-    flex: 1,
-    width: 12,
-    backgroundColor: "#111",
-    borderRadius: 6,
-    justifyContent: "flex-end",
-    overflow: "hidden",
-  },
-  bar: {
-    width: "100%",
-    borderRadius: 6,
-  },
-  barLabel: {
-    fontSize: 10,
-    textAlign: "center",
-  },
-  statsGrid: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  statBox: {
-    flex: 1,
-    backgroundColor: "#090909",
+  categoryCard: {
     borderRadius: 24,
-    padding: 16,
     borderWidth: 1,
     borderColor: "#1b1b1b",
-    gap: 8,
-  },
-  statLabel: {
-    color: "#6f6f6f",
-    fontSize: 12,
-    letterSpacing: 1.3,
-    textTransform: "uppercase",
-  },
-  statValue: {
-    color: "#f7f7f7",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  categoriesCard: {
     backgroundColor: "#090909",
-    borderRadius: 24,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "#1b1b1b",
-    gap: 18,
-  },
-  categoryRow: {
-    flexDirection: "row",
-    gap: 16,
-    alignItems: "center",
-  },
-  categoryIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  categoryInfo: {
-    flex: 1,
+    padding: 16,
     gap: 6,
   },
-  categoryTextRow: {
+  categoryCardSelected: {
+    borderColor: "#343434",
+    backgroundColor: "#101010",
+  },
+  categoryCardHeader: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "center",
+    gap: 12,
   },
-  categoryName: {
-    color: "#f7f7f7",
+  categoryCardTitle: {
+    color: "#f4f4f4",
     fontSize: 15,
     fontWeight: "600",
   },
-  categoryAmount: {
-    color: "#f4f4f4",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  progressBarTrack: {
-    height: 6,
-    backgroundColor: "#171717",
-    borderRadius: 3,
-    width: "100%",
-    overflow: "hidden",
-  },
-  progressBarFill: {
-    height: "100%",
-    borderRadius: 3,
-  },
-  categoryPercent: {
-    color: "#666",
-    fontSize: 11,
-    fontWeight: "500",
-  },
-  merchantCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#090909",
-    borderRadius: 24,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#1b1b1b",
-    gap: 16,
-  },
-  merchantIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#111",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#1d1d1d",
-  },
-  merchantInitial: {
-    color: "#f4f4f4",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  merchantInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  merchantName: {
-    color: "#f7f7f7",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  merchantMeta: {
+  categoryCardShare: {
     color: "#7d7d7d",
     fontSize: 12,
   },
-  placeholder: {
-    color: "#7f7f7f",
-    fontSize: 14,
+  categoryCardValue: {
+    color: "#f2f2f2",
+    fontSize: 21,
+    fontWeight: "600",
+  },
+  categoryCardMeta: {
+    color: "#868686",
+    fontSize: 13,
+  },
+  listCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#171717",
+    backgroundColor: "#090909",
+    padding: 16,
+  },
+  listRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingBottom: 14,
+    marginBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#171717",
+  },
+  listRowActive: {
+    backgroundColor: "#0f0f0f",
+    marginHorizontal: -8,
+    paddingHorizontal: 8,
+    paddingTop: 8,
+    borderRadius: 14,
+  },
+  listRowLast: {
+    paddingBottom: 0,
+    marginBottom: 0,
+    borderBottomWidth: 0,
+  },
+  listCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  listTitle: {
+    color: "#f4f4f4",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  listMeta: {
+    color: "#7d7d7d",
+    fontSize: 12,
+  },
+  listValue: {
+    color: "#f4f4f4",
+    fontSize: 15,
+    fontWeight: "700",
   },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 40,
-    gap: 16,
+    gap: 12,
+  },
+  emptyTitle: {
+    color: "#f2f2f2",
+    fontSize: 18,
+    fontWeight: "600",
   },
   emptyText: {
     color: "#7f7f7f",
     fontSize: 14,
+    lineHeight: 20,
     textAlign: "center",
+    maxWidth: 280,
   },
 });

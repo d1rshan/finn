@@ -70,7 +70,7 @@ const askMoneySchema = z.object({
     .default([]),
 });
 
-const analyticsPeriodSchema = z.enum(["weekly", "monthly"]).default("weekly");
+const analyticsPeriodSchema = z.enum(["daily", "weekly", "monthly"]).default("weekly");
 
 const chatSchema = z.object({
   messages: z.array(z.any()).default([]),
