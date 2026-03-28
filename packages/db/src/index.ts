@@ -4,7 +4,17 @@ import { drizzle } from "drizzle-orm/neon-http";
 
 export * from "./domain";
 export * from "./schema";
-export { and, asc, desc, eq, gte, lt } from "drizzle-orm";
+export {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lt,
+  lte,
+  or,
+} from "drizzle-orm";
 import * as schema from "./schema";
 
 export function createDb() {

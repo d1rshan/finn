@@ -10,6 +10,7 @@ import {
   and,
   desc,
   eq,
+  inArray,
 } from "@finn/db";
 
 import { db } from "@finn/db";
@@ -20,11 +21,11 @@ import {
   buildReportMetadataFromSnapshot,
 } from "@/lib/analytics";
 import { askFinnWithGemini } from "@/lib/gemini";
+import { refreshUserAnalyticsState } from "@/lib/jobs";
 import {
   listMemoryFactsForUser,
   listMemoryNodesForUser,
   normalizeExpenseInput,
-  rebuildFinancialMemoryGraph,
 } from "@/lib/memory";
 
 type ExpenseRow = typeof expense.$inferSelect;
@@ -130,6 +131,7 @@ function buildReportSummary(
 }
 
 function createInsightRecord(args: {
+  key: string;
   userId: string;
   type: typeof insight.$inferInsert.type;
   severity: typeof insight.$inferInsert.severity;
@@ -140,6 +142,7 @@ function createInsightRecord(args: {
 }) {
   return {
     id: crypto.randomUUID(),
+    key: args.key,
     userId: args.userId,
     type: args.type,
     severity: args.severity,
@@ -151,7 +154,7 @@ function createInsightRecord(args: {
   };
 }
 
-function buildInsights(userId: string, expensesForUser: ExpenseRow[]) {
+export function buildInsights(userId: string, expensesForUser: ExpenseRow[]) {
   if (expensesForUser.length === 0) {
     return [];
   }
@@ -220,6 +223,7 @@ function buildInsights(userId: string, expensesForUser: ExpenseRow[]) {
 
     insightsToInsert.push(
       createInsightRecord({
+        key: `${type}:${signal.key}`,
         userId,
         type,
         severity: signal.severity,
@@ -235,6 +239,7 @@ function buildInsights(userId: string, expensesForUser: ExpenseRow[]) {
   if (largeExpense) {
     insightsToInsert.push(
       createInsightRecord({
+        key: `large-expense:${largeExpense.id}`,
         userId,
         type: "large-expense",
         severity: "high",
@@ -275,6 +280,7 @@ function buildInsights(userId: string, expensesForUser: ExpenseRow[]) {
   if (longestStreak >= 3) {
     insightsToInsert.push(
       createInsightRecord({
+        key: "streak:legacy",
         userId,
         type: "streak",
         severity: "low",
@@ -292,7 +298,7 @@ function buildInsights(userId: string, expensesForUser: ExpenseRow[]) {
     .slice(0, 6);
 }
 
-async function rebuildReports(userId: string, expensesForUser: ExpenseRow[]) {
+export async function rebuildReports(userId: string, expensesForUser: ExpenseRow[]) {
   const periods = new Map<
     string,
     {
@@ -363,28 +369,19 @@ async function rebuildReports(userId: string, expensesForUser: ExpenseRow[]) {
 }
 
 export async function syncAnalyticsForUser(userId: string) {
-  const expensesForUser = await db
-    .select()
-    .from(expense)
-    .where(eq(expense.userId, userId))
-    .orderBy(desc(expense.occurredAt));
-
-  await db.delete(insight).where(eq(insight.userId, userId));
-
-  const insightsToInsert = buildInsights(userId, expensesForUser);
-  if (insightsToInsert.length > 0) {
-    await db.insert(insight).values(insightsToInsert);
-  }
-
-  await rebuildReports(userId, expensesForUser);
-  await rebuildFinancialMemoryGraph(userId, expensesForUser);
+  await refreshUserAnalyticsState(userId);
 }
 
 export async function getExpenseFeed(userId: string) {
   await syncAnalyticsForUser(userId);
 
   const [insightsForUser, recentExpenses, expensesForUser, memoryFacts] = await Promise.all([
-    db.select().from(insight).where(eq(insight.userId, userId)).orderBy(desc(insight.createdAt)).limit(8),
+    db
+      .select()
+      .from(insight)
+      .where(and(eq(insight.userId, userId), inArray(insight.status, ["active", "notified"])))
+      .orderBy(desc(insight.updatedAt))
+      .limit(8),
     db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)).limit(8),
     db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)).limit(90),
     listMemoryFactsForUser(userId, 4),
