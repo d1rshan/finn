@@ -26,15 +26,47 @@ export const insightTypes = [
 
 export const insightSeverities = ["low", "medium", "high"] as const;
 
-export const insightStatuses = ["active", "archived"] as const;
+export const insightStatuses = ["active", "resolved", "snoozed", "notified"] as const;
 
 export const reportPeriodTypes = ["weekly", "monthly"] as const;
+export const notificationChannels = ["push", "briefing", "report"] as const;
+export const notificationStatuses = ["pending", "sent", "failed", "skipped"] as const;
+export const memoryNodeTypes = [
+  "merchant",
+  "category",
+  "time-bucket",
+  "day-bucket",
+  "salary-window",
+  "pattern",
+] as const;
+export const memoryEdgeRelations = [
+  "categorized-as",
+  "peaks-in",
+  "spikes-on",
+  "clusters-in",
+  "reinforces",
+] as const;
+export const memoryFactKinds = [
+  "recurring-merchant",
+  "time-of-day",
+  "weekend-pattern",
+  "salary-cycle",
+  "spend-shift",
+  "merchant-category-mismatch",
+] as const;
+export const memoryFactStatuses = ["active", "archived"] as const;
 
 export type ExpenseCategory = (typeof expenseCategories)[number];
 export type InsightType = (typeof insightTypes)[number];
 export type InsightSeverity = (typeof insightSeverities)[number];
 export type InsightStatus = (typeof insightStatuses)[number];
 export type ReportPeriodType = (typeof reportPeriodTypes)[number];
+export type NotificationChannel = (typeof notificationChannels)[number];
+export type NotificationStatus = (typeof notificationStatuses)[number];
+export type MemoryNodeType = (typeof memoryNodeTypes)[number];
+export type MemoryEdgeRelation = (typeof memoryEdgeRelations)[number];
+export type MemoryFactKind = (typeof memoryFactKinds)[number];
+export type MemoryFactStatus = (typeof memoryFactStatuses)[number];
 
 export type ReportMetric = {
   label: string;
@@ -114,6 +146,7 @@ export type ReportMetadata = {
 };
 
 export type InsightMetadata = {
+  key?: string;
   amountMinor?: number;
   merchantName?: string;
   category?: ExpenseCategory;
@@ -128,4 +161,71 @@ export type InsightMetadata = {
   actualGapDays?: number;
   summary?: string;
   personaLabel?: string;
+  streakDays?: number;
+  lastObservedAt?: string;
+  currentAmountMinor?: number;
+  previousAmountMinor?: number;
+  fingerprint?: string;
+  heuristic?: string;
+  narrative?: string;
+};
+
+export type NotificationMetadata = {
+  insightId?: string;
+  insightKey?: string;
+  reportId?: string;
+  reportPeriodType?: ReportPeriodType;
+  provider?: string;
+  error?: string;
+  payload?: Record<string, unknown>;
+};
+
+export type MemoryNodeMetadata = {
+  normalizedMerchantName?: string;
+  rawMerchantNames?: string[];
+  category?: ExpenseCategory;
+  dayBucket?: "weekday" | "weekend";
+  timeBucket?: "early-morning" | "morning" | "afternoon" | "evening" | "late-night";
+  salaryWindow?: "early-month" | "mid-month" | "month-end";
+  averageAmountMinor?: number;
+  totalAmountMinor?: number;
+  transactionCount?: number;
+  sampleSize?: number;
+};
+
+export type MemoryEdgeMetadata = {
+  supportCount?: number;
+  totalAmountMinor?: number;
+  averageAmountMinor?: number;
+  percentage?: number;
+  category?: ExpenseCategory;
+  timeBucket?: MemoryNodeMetadata["timeBucket"];
+  dayBucket?: MemoryNodeMetadata["dayBucket"];
+  salaryWindow?: MemoryNodeMetadata["salaryWindow"];
+};
+
+export type MemoryFactEvidence = {
+  expenseIds?: string[];
+  relatedNodeKeys?: string[];
+  merchantName?: string;
+  category?: ExpenseCategory;
+  timeBucket?: MemoryNodeMetadata["timeBucket"];
+  dayBucket?: MemoryNodeMetadata["dayBucket"];
+  salaryWindow?: MemoryNodeMetadata["salaryWindow"];
+  sampleSize?: number;
+  baselineAmountMinor?: number;
+  currentAmountMinor?: number;
+  averageGapDays?: number;
+  dominantCategory?: ExpenseCategory;
+  mismatchCount?: number;
+  supportingSignals?: string[];
+};
+
+export type MemoryObservationMetadata = {
+  normalizedMerchantName?: string;
+  timeBucket?: MemoryNodeMetadata["timeBucket"];
+  dayBucket?: MemoryNodeMetadata["dayBucket"];
+  salaryWindow?: MemoryNodeMetadata["salaryWindow"];
+  dominantCategory?: ExpenseCategory;
+  categoryConsistent?: boolean;
 };

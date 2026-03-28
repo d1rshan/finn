@@ -19,12 +19,45 @@ export type ReportMetric = {
 };
 
 export type InsightSeverity = "low" | "medium" | "high";
+export type MemoryFactKind =
+  | "recurring-merchant"
+  | "time-of-day"
+  | "weekend-pattern"
+  | "salary-cycle"
+  | "spend-shift"
+  | "merchant-category-mismatch";
+export type MemoryNodeType =
+  | "merchant"
+  | "category"
+  | "time-bucket"
+  | "day-bucket"
+  | "salary-window"
+  | "pattern";
 
 export type InsightSummary = {
   key: string;
   title: string;
   summary: string;
   severity: InsightSeverity;
+};
+
+export type FinancialMemoryFact = {
+  id: string;
+  kind: MemoryFactKind;
+  status: "active" | "archived";
+  title: string;
+  body: string;
+  confidence: number;
+  createdAt: string;
+};
+
+export type FinancialMemoryNode = {
+  id: string;
+  type: MemoryNodeType;
+  key: string;
+  label: string;
+  confidence: number;
+  updatedAt: string;
 };
 
 export type BehavioralPersona = {
@@ -148,4 +181,9 @@ export type AnalyticsMerchantSummary = {
   amountMinor: number;
   count: number;
   lastOccurredAt: string;
+};
+
+export type AnalyticsMemoryPayload = {
+  facts: FinancialMemoryFact[];
+  nodes: FinancialMemoryNode[];
 };

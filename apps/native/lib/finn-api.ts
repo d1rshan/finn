@@ -4,12 +4,14 @@ import { authClient } from "@/lib/auth-client";
 import {
   type AnalyticsCategorySummary,
   type AnalyticsMerchantSummary,
+  type AnalyticsMemoryPayload,
   type AnalyticsOverview,
   type AnalyticsPeriodBucket,
   type AnalyticsPeriodType,
   expenseCategories,
   type BehavioralPersona,
   type ExpenseCategory,
+  type FinancialMemoryFact,
   type InsightSeverity,
   type InsightSummary,
   type ReportMetadata,
@@ -39,6 +41,8 @@ type InsightDto = {
   body: string;
   createdAt: string;
 };
+
+type MemoryFactDto = FinancialMemoryFact;
 
 type SnapshotDto = {
   metrics: ReportMetadata["metrics"];
@@ -97,6 +101,7 @@ export function useFeedQuery() {
     queryFn: () =>
       apiRequest<{
         insights: InsightDto[];
+        memoryFacts: MemoryFactDto[];
         recentExpenses: ExpenseDto[];
         snapshot: SnapshotDto;
         suggestedQuestions: string[];
@@ -122,6 +127,7 @@ export function useAnalyticsQuery(period: AnalyticsPeriodType) {
         periods: AnalyticsPeriodBucket[];
         categories: AnalyticsCategorySummary[];
         topMerchants: AnalyticsMerchantSummary[];
+        memory: AnalyticsMemoryPayload;
       }>(`/analytics?period=${period}`),
   });
 }
