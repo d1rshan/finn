@@ -2,12 +2,14 @@ import { env } from "@finn/env/server";
 import type { InsightSummary } from "@finn/db";
 
 import type { AnalyticsSnapshot, ExpenseLike } from "@/lib/analytics";
+import type { FinancialMemoryFact } from "@/lib/memory";
 
 type AskFinnLlmArgs = {
   question: string;
   snapshot: AnalyticsSnapshot;
   currentExpenses: ExpenseLike[];
   previousExpenses: ExpenseLike[];
+  memoryFacts: FinancialMemoryFact[];
   history: Array<{
     role: "user" | "assistant";
     content: string;
@@ -51,6 +53,15 @@ function summarizeSignals(signals: InsightSummary[]) {
     title: entry.title,
     summary: entry.summary,
     severity: entry.severity,
+  }));
+}
+
+function summarizeMemoryFacts(memoryFacts: FinancialMemoryFact[]) {
+  return memoryFacts.map((entry) => ({
+    kind: entry.kind,
+    title: entry.title,
+    body: entry.body,
+    confidence: entry.confidence,
   }));
 }
 
@@ -101,6 +112,7 @@ export function buildFinnPromptPayload(args: AskFinnLlmArgs) {
       endOfMonthCrunch: args.snapshot.endOfMonthCrunch,
       guiltIndex: args.snapshot.guiltIndex,
     },
+    memoryFacts: summarizeMemoryFacts(args.memoryFacts),
     recentTransactions: {
       currentWindow: summarizeExpenses(args.currentExpenses),
       previousWindow: summarizeExpenses(args.previousExpenses),
@@ -134,6 +146,7 @@ export function buildFinnChatContext(args: AskFinnLlmArgs) {
       endOfMonthCrunch: args.snapshot.endOfMonthCrunch,
       guiltIndex: args.snapshot.guiltIndex,
     },
+    memoryFacts: summarizeMemoryFacts(args.memoryFacts),
     recentTransactions: {
       currentWindow: summarizeExpenses(args.currentExpenses),
       previousWindow: summarizeExpenses(args.previousExpenses),

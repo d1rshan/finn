@@ -221,7 +221,7 @@ api.post("/chat", async (c) => {
     throw new HTTPException(400, { message: "A user question is required." });
   }
 
-  const { currentExpenses, previousExpenses, snapshot } = await buildAskMoneyContext(session.user.id);
+  const { currentExpenses, previousExpenses, snapshot, memoryFacts } = await buildAskMoneyContext(session.user.id);
 
   if (!env.GEMINI_API_KEY) {
     const fallback = answerMoneyQuestion({
@@ -255,6 +255,7 @@ api.post("/chat", async (c) => {
           previousExpenses,
           snapshot,
           history,
+          memoryFacts,
         }),
       )}`,
       "Respond with assistant text only.",
