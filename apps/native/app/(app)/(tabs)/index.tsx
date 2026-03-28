@@ -91,16 +91,16 @@ export default function HomeScreen() {
 
         <View style={styles.quickActions}>
           <Link href={"/(app)/(tabs)/chat" as Href} asChild>
-            <Pressable style={[styles.quickAction, styles.quickActionPrimary]}>
+            <Pressable style={styles.quickActionPrimary}>
               <Ionicons name="chatbubble-ellipses-outline" size={16} color="#050505" />
               <Text style={styles.quickActionPrimaryText}>Ask Finn</Text>
             </Pressable>
           </Link>
 
           <Link href={"/(app)/(tabs)/log" as Href} asChild>
-            <Pressable style={styles.quickAction}>
+            <Pressable style={styles.quickActionSecondary}>
               <Ionicons name="add-circle-outline" size={16} color="#d9d9d9" />
-              <Text style={styles.quickActionText}>Log payment</Text>
+              <Text style={styles.quickActionSecondaryText}>Log payment</Text>
             </Pressable>
           </Link>
         </View>
@@ -324,9 +324,22 @@ const styles = StyleSheet.create({
   },
   quickActions: {
     flexDirection: "row",
+    alignItems: "center",
     gap: 10,
   },
-  quickAction: {
+  quickActionPrimary: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 999,
+    backgroundColor: "#f4f4f4",
+    borderColor: "#f4f4f4",
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  quickActionSecondary: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -338,19 +351,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  quickActionPrimary: {
-    backgroundColor: "#f4f4f4",
-    borderColor: "#f4f4f4",
-  },
-  quickActionText: {
-    color: "#d9d9d9",
-    fontSize: 13,
-    fontWeight: "600",
-  },
   quickActionPrimaryText: {
     color: "#050505",
     fontSize: 13,
     fontWeight: "700",
+  },
+  quickActionSecondaryText: {
+    color: "#d9d9d9",
+    fontSize: 13,
+    fontWeight: "600",
   },
   primaryCard: {
     borderRadius: 28,
@@ -547,7 +556,7 @@ const styles = StyleSheet.create({
   },
   sheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    backgroundColor: "transparent",
   },
   sheet: {
     borderTopLeftRadius: 28,
