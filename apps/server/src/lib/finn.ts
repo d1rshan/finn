@@ -20,7 +20,12 @@ import {
   buildReportMetadataFromSnapshot,
 } from "@/lib/analytics";
 import { askFinnWithGemini } from "@/lib/gemini";
-import { listMemoryFactsForUser, normalizeExpenseInput, rebuildFinancialMemoryGraph } from "@/lib/memory";
+import {
+  listMemoryFactsForUser,
+  listMemoryNodesForUser,
+  normalizeExpenseInput,
+  rebuildFinancialMemoryGraph,
+} from "@/lib/memory";
 
 type ExpenseRow = typeof expense.$inferSelect;
 type AnalyticsPeriod = "weekly" | "monthly";
@@ -378,10 +383,11 @@ export async function syncAnalyticsForUser(userId: string) {
 export async function getExpenseFeed(userId: string) {
   await syncAnalyticsForUser(userId);
 
-  const [insightsForUser, recentExpenses, expensesForUser] = await Promise.all([
+  const [insightsForUser, recentExpenses, expensesForUser, memoryFacts] = await Promise.all([
     db.select().from(insight).where(eq(insight.userId, userId)).orderBy(desc(insight.createdAt)).limit(8),
     db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)).limit(8),
     db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)).limit(90),
+    listMemoryFactsForUser(userId, 4),
   ]);
 
   const now = new Date();
@@ -398,12 +404,13 @@ export async function getExpenseFeed(userId: string) {
 
   return {
     insights: insightsForUser,
+    memoryFacts,
     recentExpenses,
     snapshot: feedSnapshot,
     suggestedQuestions: [
       "Why did I spend more last week?",
-      "What is my biggest financial blind spot?",
-      "Do I have any recurring charges?",
+      "What pattern is Finn most confident about?",
+      "Which habit is quietly driving my monthly drift?",
     ],
   };
 }
@@ -631,11 +638,11 @@ export async function askMoneyQuestion(
 }
 
 export async function getAnalytics(userId: string, period: AnalyticsPeriod) {
-  const expensesForUser = await db
-    .select()
-    .from(expense)
-    .where(eq(expense.userId, userId))
-    .orderBy(desc(expense.occurredAt));
+  const [expensesForUser, memoryFacts, memoryNodes] = await Promise.all([
+    db.select().from(expense).where(eq(expense.userId, userId)).orderBy(desc(expense.occurredAt)),
+    listMemoryFactsForUser(userId, 6),
+    listMemoryNodesForUser(userId, 10),
+  ]);
 
   const buckets = new Map<
     string,
@@ -680,5 +687,9 @@ export async function getAnalytics(userId: string, period: AnalyticsPeriod) {
     period,
     selectedPeriodId: periods[periods.length - 1]?.id ?? null,
     periods,
+    memory: {
+      facts: memoryFacts,
+      nodes: memoryNodes,
+    },
   };
 }
