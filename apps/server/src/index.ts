@@ -20,7 +20,6 @@ import { requireSession } from "@/lib/auth";
 import {
   askMoneyQuestion,
   buildAskMoneyContext,
-  buildAskMoneyData,
   createExpenseForUser,
   deleteExpenseForUser,
   getAnalytics,
@@ -30,7 +29,7 @@ import {
   listExpensesForRange,
   listReports,
 } from "@/lib/finn";
-import { buildFinnPromptPayload, buildFinnSystemPrompt } from "@/lib/gemini";
+import { buildFinnChatContext, buildFinnSystemPrompt } from "@/lib/gemini";
 
 const app = new Hono();
 const api = new Hono();
@@ -257,12 +256,6 @@ api.post("/chat", async (c) => {
   }
 
   const { currentExpenses, previousExpenses, snapshot } = await buildAskMoneyContext(session.user.id);
-  const finnData = buildAskMoneyData({
-    question: lastUserQuestion,
-    currentExpenses,
-    previousExpenses,
-    snapshot,
-  });
 
   if (!env.GEMINI_API_KEY) {
     const fallback = answerMoneyQuestion({
@@ -280,7 +273,6 @@ api.post("/chat", async (c) => {
           writer.write({ type: "text-start", id: textId });
           writer.write({ type: "text-delta", id: textId, delta: fallback.answer });
           writer.write({ type: "text-end", id: textId });
-          writer.write({ type: "data-finn", data: finnData });
         },
       }),
     });
@@ -291,7 +283,7 @@ api.post("/chat", async (c) => {
     system: [
       buildFinnSystemPrompt(),
       `Finance context:\n${JSON.stringify(
-        buildFinnPromptPayload({
+        buildFinnChatContext({
           question: lastUserQuestion,
           currentExpenses,
           previousExpenses,
@@ -299,7 +291,9 @@ api.post("/chat", async (c) => {
           history,
         }),
       )}`,
-      "Respond with natural-language assistant text only. Do not return JSON.",
+      "Respond with assistant text only.",
+      "Use clean markdown when it helps: short headings, bullet lists, and short paragraphs.",
+      "Do not return JSON or quote the context blob.",
     ].join("\n\n"),
     messages: await convertToModelMessages(modelMessages),
     temperature: 0.4,
@@ -309,13 +303,7 @@ api.post("/chat", async (c) => {
     stream: createUIMessageStream({
       originalMessages: uiMessages,
       async execute({ writer }) {
-        writer.merge(
-          result.toUIMessageStream({
-            onFinish() {
-              writer.write({ type: "data-finn", data: finnData });
-            },
-          }),
-        );
+        writer.merge(result.toUIMessageStream());
       },
     }),
     consumeSseStream: consumeStream,

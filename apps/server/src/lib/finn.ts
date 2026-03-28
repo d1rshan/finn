@@ -18,8 +18,6 @@ import {
 import { db } from "@finn/db";
 import { z } from "zod";
 import {
-  type AnalyticsSnapshot,
-  type ExpenseLike,
   answerMoneyQuestion,
   buildAnalyticsSnapshot,
   buildReportMetadataFromSnapshot,
@@ -642,21 +640,6 @@ export function parseAskMoneyLlmResponse(llmContent: string, behavioralSignals: 
     bullets: parsed.bullets,
     suggestions: parsed.suggestions,
     supportingSignals,
-  };
-}
-
-export function buildAskMoneyData(args: {
-  question: string;
-  currentExpenses: ExpenseLike[];
-  previousExpenses: ExpenseLike[];
-  snapshot: AnalyticsSnapshot;
-}) {
-  const fallback = answerMoneyQuestion(args);
-
-  return {
-    bullets: fallback.supportingSignals.slice(0, 3).map((entry) => entry.summary),
-    suggestions: fallback.suggestions,
-    supportingSignals: fallback.supportingSignals,
   };
 }
 

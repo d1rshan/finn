@@ -2,7 +2,7 @@ import { useChat } from "@ai-sdk/react";
 import { Ionicons } from "@expo/vector-icons";
 import { DefaultChatTransport } from "ai";
 import { fetch as expoFetch } from "expo/fetch";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -15,37 +15,158 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { z } from "zod";
 
 import { Container } from "@/components/container";
 import { authClient } from "@/lib/auth-client";
 import { useFeedQuery } from "@/lib/finn-api";
 import { env } from "@finn/env/native";
 
-const supportingSignalSchema = z.object({
-  key: z.string(),
-  title: z.string(),
-  summary: z.string(),
-  severity: z.enum(["low", "medium", "high"]),
-});
+type ChatPart = {
+  type?: string;
+  text?: string;
+};
 
-const finnDataSchema = z.object({
-  bullets: z.array(z.string()),
-  suggestions: z.array(z.string()),
-  supportingSignals: z.array(supportingSignalSchema),
-});
-
-function extractText(parts: Array<{ type?: string; text?: string }>) {
+function extractText(parts: ChatPart[]) {
   return parts
     .filter((part) => part.type === "text" && typeof part.text === "string")
     .map((part) => part.text)
     .join("");
 }
 
-function extractFinnData(parts: Array<{ type?: string; data?: unknown }>) {
-  const finnPart = parts.find((part) => part.type === "data-finn");
-  const parsed = finnDataSchema.safeParse(finnPart?.data);
-  return parsed.success ? parsed.data : null;
+function normalizeAssistantText(rawText: string) {
+  const trimmed = rawText.trim();
+  if (!trimmed.startsWith("{")) {
+    return rawText;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      answer?: string;
+      bullets?: string[];
+    };
+
+    const sections = [parsed.answer?.trim() ?? ""];
+    if (parsed.bullets?.length) {
+      sections.push("", ...parsed.bullets.map((bullet) => `- ${bullet}`));
+    }
+
+    return sections.filter(Boolean).join("\n");
+  } catch {
+    return rawText;
+  }
+}
+
+function renderInlineMarkdown(text: string, textStyle: object, boldStyle: object) {
+  const segments = text.split(/(\*\*.*?\*\*)/g);
+
+  return segments.map((segment, index) => {
+    const isBold = segment.startsWith("**") && segment.endsWith("**") && segment.length >= 4;
+    const content = isBold ? segment.slice(2, -2) : segment;
+
+    return (
+      <Text key={`${content}-${index}`} style={isBold ? [textStyle, boldStyle] : textStyle}>
+        {content}
+      </Text>
+    );
+  });
+}
+
+function MarkdownMessage({
+  content,
+  isUser,
+  isStreaming,
+}: {
+  content: string;
+  isUser: boolean;
+  isStreaming: boolean;
+}) {
+  const normalized = normalizeAssistantText(content);
+  const lines = normalized.split("\n");
+  const elements: ReactNode[] = [];
+  let bulletItems: string[] = [];
+
+  function flushBullets() {
+    if (!bulletItems.length) {
+      return;
+    }
+
+    elements.push(
+      <View key={`bullets-${elements.length}`} style={styles.markdownBulletGroup}>
+        {bulletItems.map((item, index) => (
+          <View key={`${item}-${index}`} style={styles.markdownBulletRow}>
+            <Text style={[styles.markdownBulletDot, isUser ? styles.userText : styles.assistantText]}>•</Text>
+            <Text style={[styles.markdownText, isUser ? styles.userText : styles.assistantText]}>
+              {renderInlineMarkdown(item, styles.markdownText, styles.markdownBold)}
+            </Text>
+          </View>
+        ))}
+      </View>,
+    );
+
+    bulletItems = [];
+  }
+
+  lines.forEach((rawLine, index) => {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushBullets();
+      return;
+    }
+
+    const bulletMatch = trimmed.match(/^[-*]\s+(.*)$/);
+    if (bulletMatch) {
+      bulletItems.push(bulletMatch[1] ?? "");
+      return;
+    }
+
+    flushBullets();
+
+    if (trimmed.startsWith("### ")) {
+      elements.push(
+        <Text key={`h3-${index}`} style={[styles.markdownHeadingSmall, isUser ? styles.userText : styles.assistantText]}>
+          {renderInlineMarkdown(trimmed.slice(4), styles.markdownHeadingSmall, styles.markdownBold)}
+        </Text>,
+      );
+      return;
+    }
+
+    if (trimmed.startsWith("## ")) {
+      elements.push(
+        <Text key={`h2-${index}`} style={[styles.markdownHeadingMedium, isUser ? styles.userText : styles.assistantText]}>
+          {renderInlineMarkdown(trimmed.slice(3), styles.markdownHeadingMedium, styles.markdownBold)}
+        </Text>,
+      );
+      return;
+    }
+
+    if (trimmed.startsWith("# ")) {
+      elements.push(
+        <Text key={`h1-${index}`} style={[styles.markdownHeadingLarge, isUser ? styles.userText : styles.assistantText]}>
+          {renderInlineMarkdown(trimmed.slice(2), styles.markdownHeadingLarge, styles.markdownBold)}
+        </Text>,
+      );
+      return;
+    }
+
+    elements.push(
+      <Text key={`p-${index}`} style={[styles.markdownText, isUser ? styles.userText : styles.assistantText]}>
+        {renderInlineMarkdown(trimmed, styles.markdownText, styles.markdownBold)}
+      </Text>,
+    );
+  });
+
+  flushBullets();
+
+  return (
+    <View style={styles.markdownBlock}>
+      {elements.map((element, index) => (
+        <Fragment key={index}>{element}</Fragment>
+      ))}
+      {isStreaming ? <Text style={[styles.cursor, isUser ? styles.userText : styles.assistantText]}>|</Text> : null}
+    </View>
+  );
 }
 
 export default function ChatScreen() {
@@ -65,10 +186,6 @@ export default function ChatScreen() {
 
   const { messages, error, sendMessage, status } = useChat({
     transport,
-    dataPartSchemas: {
-      finn: finnDataSchema,
-    },
-    experimental_throttle: 50,
     onError: (streamError) => {
       console.error(streamError, "Finn chat error");
     },
@@ -79,14 +196,7 @@ export default function ChatScreen() {
   }, [messages, status]);
 
   const isStreaming = status === "submitted" || status === "streaming";
-  const lastAssistantData =
-    ([...messages].reverse().find((message) => message.role === "assistant")?.parts ?? []) as Array<{
-      type?: string;
-      data?: unknown;
-    }>;
-  const latestFinnData = extractFinnData(lastAssistantData);
-  const suggestedQuestions =
-    latestFinnData?.suggestions?.length ? latestFinnData.suggestions : (feedQuery.data?.suggestedQuestions ?? []);
+  const suggestedQuestions = feedQuery.data?.suggestedQuestions ?? [];
 
   async function onSubmit(question: string) {
     const trimmed = question.trim();
@@ -153,11 +263,13 @@ export default function ChatScreen() {
             <View style={styles.messagesList}>
               {messages.map((message, index) => {
                 const isUser = message.role === "user";
-                const parts = message.parts as Array<{ type?: string; text?: string; data?: unknown }>;
+                const parts = message.parts as ChatPart[];
                 const text = extractText(parts);
-                const finnData = extractFinnData(parts);
                 const isLatestAssistant = !isUser && index === messages.length - 1 && isStreaming;
-                const showStructuredData = !isUser && !isLatestAssistant && Boolean(finnData);
+
+                if (!text.trim() && !isLatestAssistant) {
+                  return null;
+                }
 
                 return (
                   <View
@@ -179,34 +291,7 @@ export default function ChatScreen() {
                         isUser ? styles.userBubble : styles.assistantBubble,
                       ]}
                     >
-                      {text ? (
-                        <Text style={[styles.messageText, isUser ? styles.userText : styles.assistantText]}>
-                          {text}
-                          {isLatestAssistant ? <Text style={styles.cursor}>|</Text> : null}
-                        </Text>
-                      ) : null}
-
-                      {showStructuredData && finnData?.bullets?.length ? (
-                        <View style={styles.bulletsContainer}>
-                          {finnData.bullets.map((bullet) => (
-                            <View key={bullet} style={styles.bulletRow}>
-                              <Text style={styles.bulletDot}>•</Text>
-                              <Text style={styles.bulletText}>{bullet}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      ) : null}
-
-                      {showStructuredData && finnData?.supportingSignals?.length ? (
-                        <View style={styles.signalsContainer}>
-                          {finnData.supportingSignals.map((signal) => (
-                            <View key={signal.key} style={styles.signalCard}>
-                              <Text style={styles.signalTitle}>{signal.title}</Text>
-                              <Text style={styles.signalBody}>{signal.summary}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      ) : null}
+                      <MarkdownMessage content={text} isUser={isUser} isStreaming={isLatestAssistant} />
                     </View>
                   </View>
                 );
@@ -341,61 +426,51 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     paddingHorizontal: 0,
   },
-  messageText: {
-    fontSize: 16,
-    lineHeight: 24,
-  },
   userText: {
     color: "#000",
   },
   assistantText: {
     color: "#e0e0e0",
   },
-  cursor: {
-    color: "#f4f4f4",
-    fontWeight: "bold",
-  },
-  bulletsContainer: {
-    marginTop: 12,
+  markdownBlock: {
     gap: 8,
   },
-  bulletRow: {
+  markdownText: {
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  markdownBold: {
+    fontWeight: "700",
+  },
+  markdownHeadingLarge: {
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: "700",
+  },
+  markdownHeadingMedium: {
+    fontSize: 18,
+    lineHeight: 26,
+    fontWeight: "700",
+  },
+  markdownHeadingSmall: {
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "700",
+  },
+  markdownBulletGroup: {
+    gap: 6,
+  },
+  markdownBulletRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
   },
-  bulletDot: {
-    color: "#666",
+  markdownBulletDot: {
     fontSize: 16,
-    marginTop: -2,
+    lineHeight: 24,
   },
-  bulletText: {
-    color: "#bbb",
-    fontSize: 14,
-    lineHeight: 20,
-    flex: 1,
-  },
-  signalsContainer: {
-    marginTop: 16,
-    gap: 10,
-  },
-  signalCard: {
-    backgroundColor: "#111",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#222",
-  },
-  signalTitle: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  signalBody: {
-    color: "#888",
-    fontSize: 12,
-    lineHeight: 18,
+  cursor: {
+    fontWeight: "bold",
   },
   followupsBar: {
     marginTop: 4,
