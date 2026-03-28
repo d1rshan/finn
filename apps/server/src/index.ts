@@ -8,6 +8,7 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   streamText,
+  type UIMessageStreamWriter,
 } from "ai";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -27,6 +28,7 @@ import {
   listExpenses,
 } from "@/lib/finn";
 import { buildFinnChatContext, buildFinnSystemPrompt } from "@/lib/gemini";
+import { startScheduler } from "@/lib/jobs";
 
 const app = new Hono();
 const api = new Hono();
@@ -234,7 +236,7 @@ api.post("/chat", async (c) => {
     return createUIMessageStreamResponse({
       stream: createUIMessageStream({
         originalMessages: uiMessages,
-        execute: ({ writer }) => {
+        execute: ({ writer }: { writer: UIMessageStreamWriter }) => {
           const textId = crypto.randomUUID();
           writer.write({ type: "text-start", id: textId });
           writer.write({ type: "text-delta", id: textId, delta: fallback.answer });
@@ -269,7 +271,7 @@ api.post("/chat", async (c) => {
   return createUIMessageStreamResponse({
     stream: createUIMessageStream({
       originalMessages: uiMessages,
-      async execute({ writer }) {
+      async execute({ writer }: { writer: UIMessageStreamWriter }) {
         writer.merge(result.toUIMessageStream());
       },
     }),
@@ -284,6 +286,10 @@ app.get("/", (c) => {
 });
 
 import { serve } from "@hono/node-server";
+
+if (env.ENABLE_SCHEDULER) {
+  startScheduler();
+}
 
 serve(
   {

@@ -26,9 +26,11 @@ export const insightTypes = [
 
 export const insightSeverities = ["low", "medium", "high"] as const;
 
-export const insightStatuses = ["active", "archived"] as const;
+export const insightStatuses = ["active", "resolved", "snoozed", "notified"] as const;
 
 export const reportPeriodTypes = ["weekly", "monthly"] as const;
+export const notificationChannels = ["push", "briefing", "report"] as const;
+export const notificationStatuses = ["pending", "sent", "failed", "skipped"] as const;
 export const memoryNodeTypes = [
   "merchant",
   "category",
@@ -59,6 +61,8 @@ export type InsightType = (typeof insightTypes)[number];
 export type InsightSeverity = (typeof insightSeverities)[number];
 export type InsightStatus = (typeof insightStatuses)[number];
 export type ReportPeriodType = (typeof reportPeriodTypes)[number];
+export type NotificationChannel = (typeof notificationChannels)[number];
+export type NotificationStatus = (typeof notificationStatuses)[number];
 export type MemoryNodeType = (typeof memoryNodeTypes)[number];
 export type MemoryEdgeRelation = (typeof memoryEdgeRelations)[number];
 export type MemoryFactKind = (typeof memoryFactKinds)[number];
@@ -142,6 +146,7 @@ export type ReportMetadata = {
 };
 
 export type InsightMetadata = {
+  key?: string;
   amountMinor?: number;
   merchantName?: string;
   category?: ExpenseCategory;
@@ -156,6 +161,23 @@ export type InsightMetadata = {
   actualGapDays?: number;
   summary?: string;
   personaLabel?: string;
+  streakDays?: number;
+  lastObservedAt?: string;
+  currentAmountMinor?: number;
+  previousAmountMinor?: number;
+  fingerprint?: string;
+  heuristic?: string;
+  narrative?: string;
+};
+
+export type NotificationMetadata = {
+  insightId?: string;
+  insightKey?: string;
+  reportId?: string;
+  reportPeriodType?: ReportPeriodType;
+  provider?: string;
+  error?: string;
+  payload?: Record<string, unknown>;
 };
 
 export type MemoryNodeMetadata = {

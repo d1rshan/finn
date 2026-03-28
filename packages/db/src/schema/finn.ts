@@ -6,6 +6,7 @@ import {
   text,
   timestamp,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 import {
@@ -13,6 +14,8 @@ import {
   insightSeverities,
   insightStatuses,
   insightTypes,
+  notificationChannels,
+  notificationStatuses,
   memoryEdgeRelations,
   memoryFactKinds,
   memoryFactStatuses,
@@ -21,6 +24,7 @@ import {
   type MemoryFactEvidence,
   type MemoryNodeMetadata,
   type MemoryObservationMetadata,
+  type NotificationMetadata,
   reportPeriodTypes,
   type InsightMetadata,
   type ReportMetadata,
@@ -32,6 +36,8 @@ export const insightTypeEnum = pgEnum("insight_type", insightTypes);
 export const insightSeverityEnum = pgEnum("insight_severity", insightSeverities);
 export const insightStatusEnum = pgEnum("insight_status", insightStatuses);
 export const reportPeriodTypeEnum = pgEnum("report_period_type", reportPeriodTypes);
+export const notificationChannelEnum = pgEnum("notification_channel", notificationChannels);
+export const notificationStatusEnum = pgEnum("notification_status", notificationStatuses);
 export const memoryNodeTypeEnum = pgEnum("memory_node_type", memoryNodeTypes);
 export const memoryEdgeRelationEnum = pgEnum("memory_edge_relation", memoryEdgeRelations);
 export const memoryFactKindEnum = pgEnum("memory_fact_kind", memoryFactKinds);
@@ -63,6 +69,7 @@ export const insight = pgTable(
   "insight",
   {
     id: text("id").primaryKey(),
+    key: text("key").notNull(),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -73,8 +80,20 @@ export const insight = pgTable(
     body: text("body").notNull(),
     metadata: jsonb("metadata").$type<InsightMetadata>().notNull().default({}),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    lastEvaluatedAt: timestamp("last_evaluated_at").defaultNow().notNull(),
+    resolvedAt: timestamp("resolved_at"),
+    lastNotifiedAt: timestamp("last_notified_at"),
+    notificationHash: text("notification_hash"),
   },
-  (table) => [index("insight_user_created_at_idx").on(table.userId, table.createdAt)],
+  (table) => [
+    uniqueIndex("insight_user_key_idx").on(table.userId, table.key),
+    index("insight_user_created_at_idx").on(table.userId, table.createdAt),
+    index("insight_status_severity_idx").on(table.status, table.severity),
+  ],
 );
 
 export const report = pgTable(
@@ -94,6 +113,28 @@ export const report = pgTable(
   },
   (table) => [
     index("report_user_period_idx").on(table.userId, table.periodType, table.periodStart),
+    uniqueIndex("report_user_period_unique_idx").on(table.userId, table.periodType, table.periodStart),
+  ],
+);
+
+export const notification = pgTable(
+  "notification",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    channel: notificationChannelEnum("channel").notNull().default("push"),
+    status: notificationStatusEnum("status").notNull().default("pending"),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    metadata: jsonb("metadata").$type<NotificationMetadata>().notNull().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    deliveredAt: timestamp("delivered_at"),
+  },
+  (table) => [
+    index("notification_user_created_at_idx").on(table.userId, table.createdAt),
+    index("notification_status_channel_idx").on(table.status, table.channel),
   ],
 );
 
